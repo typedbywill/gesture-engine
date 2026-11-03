@@ -1,0 +1,17 @@
+{
+  "name": "gesture-engine-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SDK de gestos em TypeScript com suporte a Browser e Node.js",
+  "scripts": {
+    "build": "pnpm --filter gesture-engine build && pnpm --filter playground build",
+    "test": "pnpm --filter gesture-engine test",
+    "test:coverage": "pnpm --filter gesture-engine test:coverage",
+    "dev": "pnpm --filter playground dev",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
