@@ -3,7 +3,7 @@ import { GestureEngineError } from "../core/types.js";
 export interface CameraAdapterOptions {
   video?: HTMLVideoElement;
   deviceId?: string;
-  facingMode?: string | MediaTrackConstraintSet;
+  facingMode?: string;
   width?: number | ConstrainULong;
   height?: number | ConstrainULong;
   idealFps?: number;
