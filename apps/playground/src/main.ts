@@ -4,6 +4,7 @@ import {
   type HandTrackingEvent,
   type GestureEventMap,
 } from "gesture-engine/browser";
+import { setupLiveHUD } from "./live-hud.js";
 import { LandmarkDrawer } from "./drawer.js";
 import { SimulatedCamera, type SimulationMode } from "./simulated-camera.js";
 
@@ -71,6 +72,10 @@ const engine = createBrowserGestureEngine({
   absenceTimeoutMs: 250,
   swipeCooldownMs: 500,
   mirrored: true,
+  recognition: {
+    requireRelease: true,
+    commandGestures: ["NUMBER_ONE", "NUMBER_TWO", "PINCH", "CLOSED_FIST", "THUMBS_UP", "THUMBS_DOWN"],
+  },
   assets: {
     modelAssetPath: "/models/hand_landmarker.task",
     wasmRoot: "/mediapipe/wasm",
@@ -79,6 +84,19 @@ const engine = createBrowserGestureEngine({
 
 drawer = new LandmarkDrawer(canvasEl);
 simulatedCamera = new SimulatedCamera();
+const liveHUD = setupLiveHUD(engine, async () => { if (isRunning) await stopCapture(); }, () => {
+  updateSimulationPosition();
+  scheduleRender();
+});
+
+function updateSimulationPosition() {
+  const checked = (document.getElementById("simulationInsideRoi") as HTMLInputElement).checked;
+  const region = engine.getRecognitionOptions().region;
+  simulatedCamera.setPosition(checked && region
+    ? { x: isMirrored ? 1 - (region.x + region.width / 2) : region.x + region.width / 2, y: region.y + region.height / 2 }
+    : null);
+}
+document.getElementById("simulationInsideRoi")!.addEventListener("change", updateSimulationPosition);
 
 // Event Logging
 function appendLog(eventType: string, details: string, cssClass = "") {
@@ -116,7 +134,7 @@ function appendLog(eventType: string, details: string, cssClass = "") {
 
 // Atualização de HUD de Gestos Ativos
 function updateActiveGesturesHUD() {
-  const activeGestures = (engine.getCoreEngine() as any).stabilizer.getActiveGestures();
+  const activeGestures = engine.getActiveGestures();
   const activeKeys = new Set<string>();
 
   for (const g of activeGestures) {
@@ -166,12 +184,18 @@ function scheduleRender() {
       isMirrored,
       isSimulationMode ? undefined : { width: videoEl.videoWidth, height: videoEl.videoHeight },
     );
+    drawer.drawRegion(engine.getRecognitionOptions().region,
+      isSimulationMode ? undefined : { width: videoEl.videoWidth, height: videoEl.videoHeight });
     updateActiveGesturesHUD();
   });
 }
 
 new ResizeObserver(scheduleRender).observe(videoContainer);
 videoEl.addEventListener("resize", scheduleRender);
+
+engine.on("command:detected", ({ gesture, handId }) => {
+  appendLog("command:detected", `${gesture} aceito para ${handId}`, "gesture-start");
+});
 
 // Inscrição em Eventos Tipados
 engine.on("ready", () => {
@@ -323,6 +347,7 @@ async function stopCapture() {
     }
 
     isRunning = false;
+    liveHUD.renderState({ ...engine.getRecognitionState(), enabled: false, hands: [] });
     if (renderFrameId !== null) {
       cancelAnimationFrame(renderFrameId);
       renderFrameId = null;
@@ -363,12 +388,15 @@ btnPauseRecognition.addEventListener("click", () => {
     `;
     setStatus("paused", "Reconhecimento Pausado");
   }
+  liveHUD.renderState({ ...engine.getRecognitionState(), enabled: engine.getCoreEngine().isRecognitionEnabled() });
+  scheduleRender();
 });
 
 // Mirror Toggle
 chkMirror.addEventListener("change", () => {
   isMirrored = chkMirror.checked;
   engine.setMirrored(isMirrored);
+  updateSimulationPosition();
   if (isMirrored) {
     videoContainer.classList.add("mirrored");
   } else {
@@ -386,6 +414,7 @@ btnRealCamera.addEventListener("click", async () => {
   btnSimulated.classList.remove("active");
   cameraSelectWrapper.classList.remove("hidden");
   simulationSelectWrapper.classList.add("hidden");
+  document.getElementById("simulationPositionWrapper")!.classList.add("hidden");
   appendLog("mode", "Modo alternado para Câmera Real");
 });
 
@@ -396,6 +425,7 @@ btnSimulated.addEventListener("click", async () => {
   btnSimulated.classList.add("active");
   btnRealCamera.classList.remove("active");
   simulationSelectWrapper.classList.remove("hidden");
+  document.getElementById("simulationPositionWrapper")!.classList.remove("hidden");
   cameraSelectWrapper.classList.add("hidden");
   appendLog("mode", "Modo alternado para Mídia Simulada (sem necessidade de webcam)");
 });
@@ -410,19 +440,19 @@ simulationSelect.addEventListener("change", () => {
 sliderStabilization.addEventListener("input", () => {
   const val = Number(sliderStabilization.value);
   valStabilization.textContent = `${val} ms`;
-  (engine.getCoreEngine() as any).stabilizer.setOptions({ stabilizationTimeMs: val });
+  engine.setOptions({ stabilizationTimeMs: val });
 });
 
 sliderAbsence.addEventListener("input", () => {
   const val = Number(sliderAbsence.value);
   valAbsence.textContent = `${val} ms`;
-  (engine.getCoreEngine() as any).tracker.setOptions({ absenceTimeoutMs: val });
+  engine.setOptions({ absenceTimeoutMs: val });
 });
 
 sliderCooldown.addEventListener("input", () => {
   const val = Number(sliderCooldown.value);
   valCooldown.textContent = `${val} ms`;
-  (engine.getCoreEngine() as any).swipeTracker.setCooldown(val);
+  engine.setOptions({ swipeCooldownMs: val });
 });
 
 // Clear Log

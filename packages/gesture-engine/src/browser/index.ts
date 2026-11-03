@@ -18,6 +18,13 @@ export {
 
 // Re-exporta core constants e types para conveniência
 export {
+  RECOGNITION_MODES,
+  type RecognitionMode,
+  type RecognitionOptions,
+  type RecognitionStateEvent,
+  type RecognitionHandState,
+  type ActivationRegion,
+  type CommandDetectedEvent,
   BUILT_IN_GESTURES,
   GESTURE_EVENTS,
   GestureEngine,

@@ -1,4 +1,4 @@
-import type { HandTrackingEvent, Landmark3D } from "gesture-engine/core";
+import type { ActivationRegion, HandTrackingEvent, Landmark3D } from "gesture-engine/core";
 
 // Conexões padrão dos 21 landmarks MediaPipe
 const CONNECTIONS: [number, number][] = [
@@ -48,6 +48,27 @@ export class LandmarkDrawer {
 
   clear(): void {
     this.ctx.clearRect(0, 0, this.width, this.height);
+  }
+
+  drawRegion(region: ActivationRegion | null | undefined, source?: { width: number; height: number }): void {
+    if (!region) return;
+    const { width: w, height: h, ctx } = this;
+    const sw = source?.width || w, sh = source?.height || h;
+    const scale = Math.max(w / sw, h / sh);
+    const dw = sw * scale, dh = sh * scale;
+    const x = region.x * dw + (w - dw) / 2, y = region.y * dh + (h - dh) / 2;
+    ctx.save();
+    ctx.fillStyle = "rgba(52, 211, 153, 0.08)";
+    ctx.fillRect(x, y, region.width * dw, region.height * dh);
+    ctx.strokeStyle = "#34d399";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 5]);
+    ctx.strokeRect(x, y, region.width * dw, region.height * dh);
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#34d399";
+    ctx.font = "12px system-ui";
+    ctx.fillText("ROI · centro da palma", Math.max(8, x + 10), Math.max(68, y + 22));
+    ctx.restore();
   }
 
   drawHands(

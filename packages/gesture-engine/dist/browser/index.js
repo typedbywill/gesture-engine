@@ -1,3 +1,199 @@
+// src/core/types.ts
+var GESTURE_EVENTS = {
+  READY: "ready",
+  HAND_DETECTED: "hand:detected",
+  HAND_TRACKING: "hand:tracking",
+  HAND_LOST: "hand:lost",
+  GESTURE_DETECTED: "gesture:detected",
+  GESTURE_START: "gesture:start",
+  GESTURE_UPDATE: "gesture:update",
+  GESTURE_END: "gesture:end",
+  GESTURE_CANCELLED: "gesture:cancelled",
+  CAMERA_ERROR: "camera:error",
+  ERROR: "error",
+  COMMAND_DETECTED: "command:detected",
+  RECOGNITION_STATE: "recognition:state"
+};
+var BUILT_IN_GESTURES = {
+  NUMBER_ONE: "NUMBER_ONE",
+  NUMBER_TWO: "NUMBER_TWO",
+  NUMBER_THREE: "NUMBER_THREE",
+  NUMBER_FOUR: "NUMBER_FOUR",
+  NUMBER_FIVE: "NUMBER_FIVE",
+  OPEN_PALM: "OPEN_PALM",
+  CLOSED_FIST: "CLOSED_FIST",
+  THUMBS_UP: "THUMBS_UP",
+  THUMBS_DOWN: "THUMBS_DOWN",
+  POINTING_UP: "POINTING_UP",
+  POINTING_DOWN: "POINTING_DOWN",
+  POINTING_LEFT: "POINTING_LEFT",
+  POINTING_RIGHT: "POINTING_RIGHT",
+  THUMB_LEFT: "THUMB_LEFT",
+  THUMB_RIGHT: "THUMB_RIGHT",
+  VICTORY: "VICTORY",
+  ROCK_ON: "ROCK_ON",
+  OK_SIGN: "OK_SIGN",
+  PINCH: "PINCH",
+  SWIPE_LEFT: "SWIPE_LEFT",
+  SWIPE_RIGHT: "SWIPE_RIGHT",
+  SWIPE_UP: "SWIPE_UP",
+  SWIPE_DOWN: "SWIPE_DOWN",
+  UNKNOWN: "UNKNOWN"
+};
+var RECOGNITION_MODES = {
+  ALWAYS_ON: "ALWAYS_ON",
+  ARMED: "ARMED",
+  BYPASS: "BYPASS"
+};
+var GestureEngineError = class extends Error {
+  code;
+  recoverable;
+  cause;
+  constructor(options) {
+    super(options.message);
+    this.name = "GestureEngineError";
+    this.code = options.code;
+    this.recoverable = options.recoverable ?? false;
+    this.cause = options.cause;
+  }
+};
+
+// src/core/command-controller.ts
+var CommandController = class {
+  options;
+  states = /* @__PURE__ */ new Map();
+  lastTimestamp = -Infinity;
+  snapshot = { timestamp: 0, mode: "ALWAYS_ON", enabled: true, hands: [] };
+  constructor(options = {}) {
+    this.options = {
+      mode: "ALWAYS_ON",
+      activationGesture: "OPEN_PALM",
+      activationTimeMs: 500,
+      armedTimeoutMs: 5e3,
+      requireRelease: true,
+      releaseTimeMs: 150,
+      region: null
+    };
+    this.configure(options);
+  }
+  configure(options) {
+    const next = { ...this.options, ...options };
+    const roi = next.region;
+    if (!["ALWAYS_ON", "ARMED", "BYPASS"].includes(next.mode) || !next.activationGesture || next.activationGesture.startsWith("SWIPE_") || next.activationGesture === "UNKNOWN" || ![next.activationTimeMs, next.armedTimeoutMs, next.releaseTimeMs].every((v) => Number.isFinite(v) && v >= 0) || next.armedTimeoutMs === 0 || roi && (![roi.x, roi.y, roi.width, roi.height].every(Number.isFinite) || roi.x < 0 || roi.y < 0 || roi.width <= 0 || roi.height <= 0 || roi.x + roi.width > 1 || roi.y + roi.height > 1)) {
+      throw new GestureEngineError({ code: "INVALID_RECOGNITION_OPTIONS", message: "Configura\xE7\xE3o de reconhecimento inv\xE1lida." });
+    }
+    this.options = { ...next, region: roi ? { ...roi } : null, commandGestures: next.commandGestures?.slice() };
+    this.reset();
+  }
+  getOptions() {
+    return { ...this.options, region: this.options.region ? { ...this.options.region } : null, commandGestures: this.options.commandGestures?.slice() };
+  }
+  reset() {
+    this.states.clear();
+    this.lastTimestamp = -Infinity;
+    this.snapshot = { ...this.snapshot, mode: this.options.mode, hands: [] };
+  }
+  getState() {
+    return { ...this.snapshot, hands: this.snapshot.hands.map((h) => ({ ...h })) };
+  }
+  process(hands, matches, timestamp, stabilizationTimeMs, mirrored, enabled) {
+    const commands = [];
+    const { mode, region, activationGesture, activationTimeMs, armedTimeoutMs, requireRelease, releaseTimeMs } = this.options;
+    this.snapshot = { timestamp, mode, enabled, hands: [] };
+    if (!Number.isFinite(timestamp) || timestamp <= this.lastTimestamp || timestamp - this.lastTimestamp > 250) {
+      for (const state of this.states.values()) {
+        state.candidate = void 0;
+        state.eligibleSince = timestamp;
+        state.armedUntil = -Infinity;
+        state.releasedSince = void 0;
+      }
+    }
+    this.lastTimestamp = timestamp;
+    if (!enabled || mode === "BYPASS" || !Number.isFinite(timestamp)) {
+      this.states.clear();
+      return commands;
+    }
+    const present = new Set(hands.map((h) => h.handId));
+    for (const id of this.states.keys()) {
+      if (!present.has(id)) {
+        const state = this.states.get(id);
+        state.candidate = void 0;
+        state.eligibleSince = timestamp;
+        state.armedUntil = -Infinity;
+        state.releasedSince ??= timestamp;
+        if (timestamp - state.releasedSince >= releaseTimeMs) this.states.delete(id);
+      }
+    }
+    for (const hand of hands) {
+      const raw = matches.get(hand.handId) ?? /* @__PURE__ */ new Map();
+      let state = this.states.get(hand.handId);
+      if (!state) {
+        state = { eligibleSince: timestamp, since: timestamp, armedUntil: -Infinity, locked: /* @__PURE__ */ new Set() };
+        this.states.set(hand.handId, state);
+      }
+      const view = { handId: hand.handId, status: "READY", progress: 0, armed: mode === "ALWAYS_ON" || timestamp < state.armedUntil, gesture: void 0 };
+      this.snapshot.hands.push(view);
+      const x = mirrored ? 1 - hand.features.palmCenter.x : hand.features.palmCenter.x;
+      const y = hand.features.palmCenter.y;
+      if (region && !(x >= region.x && x <= region.x + region.width && y >= region.y && y <= region.y + region.height)) {
+        state.candidate = void 0;
+        state.eligibleSince = timestamp;
+        state.armedUntil = -Infinity;
+        view.armed = false;
+        view.status = "OUTSIDE_ROI";
+        continue;
+      }
+      if (state.locked.size) {
+        view.status = "WAITING_RELEASE";
+        const holding = [...state.locked].some((g) => raw.has(g) || g === "__SWIPE__" && [...raw.keys()].some((k) => k.startsWith("SWIPE_")));
+        if (holding) state.releasedSince = void 0;
+        else state.releasedSince ??= timestamp;
+        if (state.releasedSince === void 0 || timestamp - state.releasedSince < releaseTimeMs) continue;
+        state.locked.clear();
+        state.releasedSince = void 0;
+        state.candidate = void 0;
+      }
+      const waiting = mode === "ARMED" && timestamp >= state.armedUntil;
+      const candidates = waiting ? [activationGesture] : this.options.commandGestures ?? [...raw.keys()];
+      const gesture = candidates.find((g) => raw.has(g) && g !== "UNKNOWN" && (waiting || mode !== "ARMED" || g !== activationGesture));
+      if (!gesture) {
+        state.candidate = void 0;
+        view.status = waiting ? "WAITING_ACTIVATION" : "READY";
+        continue;
+      }
+      if (state.candidate !== gesture) {
+        state.candidate = gesture;
+        state.since = timestamp;
+      }
+      const match = raw.get(gesture);
+      if (gesture.startsWith("SWIPE_") && timestamp - state.eligibleSince < (match.duration ?? 0)) continue;
+      const required = waiting ? activationTimeMs : stabilizationTimeMs;
+      const elapsed = gesture.startsWith("SWIPE_") ? match.duration ?? 0 : timestamp - state.since;
+      view.status = waiting ? "ACTIVATING" : "STABILIZING";
+      view.gesture = gesture;
+      view.progress = required <= 0 ? 1 : Math.min(1, elapsed / required);
+      if (elapsed < required) continue;
+      state.candidate = void 0;
+      if (waiting) {
+        state.armedUntil = timestamp + armedTimeoutMs;
+        state.locked = new Set([...raw.keys()].filter((g) => !g.startsWith("SWIPE_") && g !== "UNKNOWN"));
+        view.armed = true;
+        view.status = "WAITING_RELEASE";
+        continue;
+      }
+      commands.push({ gesture, handId: hand.handId, handedness: hand.handedness, score: match.score, timestamp, duration: elapsed, data: match.data, mode });
+      if (requireRelease) {
+        state.locked = new Set([...raw.keys()].filter((g) => !g.startsWith("SWIPE_") && g !== "UNKNOWN"));
+        if (gesture.startsWith("SWIPE_")) state.locked.add("__SWIPE__");
+      }
+      if (mode === "ARMED") state.armedUntil = -Infinity;
+      view.armed = mode === "ALWAYS_ON";
+      view.status = state.locked.size ? "WAITING_RELEASE" : mode === "ARMED" ? "WAITING_ACTIVATION" : "READY";
+    }
+    return commands;
+  }
+};
+
 // src/core/event-emitter.ts
 var TypedEventEmitter = class {
   listeners = /* @__PURE__ */ new Map();
@@ -47,59 +243,6 @@ var TypedEventEmitter = class {
   }
   removeAllListeners() {
     this.listeners.clear();
-  }
-};
-
-// src/core/types.ts
-var GESTURE_EVENTS = {
-  READY: "ready",
-  HAND_DETECTED: "hand:detected",
-  HAND_TRACKING: "hand:tracking",
-  HAND_LOST: "hand:lost",
-  GESTURE_DETECTED: "gesture:detected",
-  GESTURE_START: "gesture:start",
-  GESTURE_UPDATE: "gesture:update",
-  GESTURE_END: "gesture:end",
-  GESTURE_CANCELLED: "gesture:cancelled",
-  CAMERA_ERROR: "camera:error",
-  ERROR: "error"
-};
-var BUILT_IN_GESTURES = {
-  NUMBER_ONE: "NUMBER_ONE",
-  NUMBER_TWO: "NUMBER_TWO",
-  NUMBER_THREE: "NUMBER_THREE",
-  NUMBER_FOUR: "NUMBER_FOUR",
-  NUMBER_FIVE: "NUMBER_FIVE",
-  OPEN_PALM: "OPEN_PALM",
-  CLOSED_FIST: "CLOSED_FIST",
-  THUMBS_UP: "THUMBS_UP",
-  THUMBS_DOWN: "THUMBS_DOWN",
-  POINTING_UP: "POINTING_UP",
-  POINTING_DOWN: "POINTING_DOWN",
-  POINTING_LEFT: "POINTING_LEFT",
-  POINTING_RIGHT: "POINTING_RIGHT",
-  THUMB_LEFT: "THUMB_LEFT",
-  THUMB_RIGHT: "THUMB_RIGHT",
-  VICTORY: "VICTORY",
-  ROCK_ON: "ROCK_ON",
-  OK_SIGN: "OK_SIGN",
-  PINCH: "PINCH",
-  SWIPE_LEFT: "SWIPE_LEFT",
-  SWIPE_RIGHT: "SWIPE_RIGHT",
-  SWIPE_UP: "SWIPE_UP",
-  SWIPE_DOWN: "SWIPE_DOWN",
-  UNKNOWN: "UNKNOWN"
-};
-var GestureEngineError = class extends Error {
-  code;
-  recoverable;
-  cause;
-  constructor(options) {
-    super(options.message);
-    this.name = "GestureEngineError";
-    this.code = options.code;
-    this.recoverable = options.recoverable ?? false;
-    this.cause = options.cause;
   }
 };
 
@@ -950,6 +1093,7 @@ var GestureEngine = class {
   tracker;
   stabilizer;
   swipeTracker;
+  commands;
   state = "UNINITIALIZED";
   recognitionEnabled = true;
   enabledGestures = /* @__PURE__ */ new Set();
@@ -957,6 +1101,7 @@ var GestureEngine = class {
   options;
   constructor(options = {}) {
     this.options = { ...options };
+    this.commands = new CommandController(options.recognition);
     this.tracker = new HandTracker({
       maxHands: options.maxHands ?? 2,
       absenceTimeoutMs: options.absenceTimeoutMs ?? 250
@@ -1063,7 +1208,33 @@ var GestureEngine = class {
   getState() {
     return this.state;
   }
+  configureRecognition(options) {
+    this.commands.configure(options);
+  }
+  setRecognitionMode(mode) {
+    this.configureRecognition({ mode });
+  }
+  getRecognitionOptions() {
+    return this.commands.getOptions();
+  }
+  getRecognitionState() {
+    return this.commands.getState();
+  }
+  getActiveGestures() {
+    return this.stabilizer.getActiveGestures();
+  }
+  setOptions(options) {
+    if (Object.values(options).some((v) => v !== void 0 && (!Number.isFinite(v) || v < 0))) {
+      throw new GestureEngineError({ code: "INVALID_OPTIONS", message: "Tempos devem ser finitos e n\xE3o negativos." });
+    }
+    Object.assign(this.options, options);
+    this.stabilizer.setOptions(options);
+    this.tracker.setOptions(options);
+    if (options.swipeCooldownMs !== void 0) this.swipeTracker.setCooldown(options.swipeCooldownMs);
+    this.commands.reset();
+  }
   setMirrored(mirrored) {
+    this.commands.reset();
     this.options.mirrored = mirrored;
     this.swipeTracker.setMirrored(mirrored);
   }
@@ -1144,14 +1315,19 @@ var GestureEngine = class {
       });
     }
     if (!this.recognitionEnabled || this.state !== "RUNNING" && this.state !== "INITIALIZED") {
+      this.commands.process([], /* @__PURE__ */ new Map(), timestamp, 0, false, false);
+      this.emitter.emit("recognition:state", this.commands.getState());
       return {
         timestamp,
         trackedHands: trackingResult.trackedHands,
         activeGestures: []
       };
     }
+    const commandMatches = /* @__PURE__ */ new Map();
     const matchesByHand = /* @__PURE__ */ new Map();
     const allCandidateGestures = Array.from(this.enabledGestures);
+    const activationGesture = this.commands.getOptions().activationGesture;
+    const evaluationGestures = [.../* @__PURE__ */ new Set([...allCandidateGestures, activationGesture])];
     for (const hand of trackingResult.updatedHands) {
       const handMatches = /* @__PURE__ */ new Map();
       let anyStaticMatched = false;
@@ -1165,7 +1341,7 @@ var GestureEngine = class {
         history,
         timestamp
       };
-      for (const gesture of allCandidateGestures) {
+      for (const gesture of evaluationGestures) {
         if (gesture === BUILT_IN_GESTURES.UNKNOWN) continue;
         if (gesture === BUILT_IN_GESTURES.SWIPE_LEFT || gesture === BUILT_IN_GESTURES.SWIPE_RIGHT || gesture === BUILT_IN_GESTURES.SWIPE_UP || gesture === BUILT_IN_GESTURES.SWIPE_DOWN) {
           continue;
@@ -1195,7 +1371,7 @@ var GestureEngine = class {
         }
       }
       for (const [name, def] of this.customGestures.entries()) {
-        if (!this.enabledGestures.has(name)) continue;
+        if (!this.enabledGestures.has(name) && name !== activationGesture) continue;
         try {
           const evalResult = def.recognize(ctx);
           if (evalResult) {
@@ -1229,6 +1405,9 @@ var GestureEngine = class {
           handMatches.set(BUILT_IN_GESTURES.UNKNOWN, { score: 1 });
         }
       }
+      const rawMatches = new Map(handMatches);
+      commandMatches.set(hand.handId, rawMatches);
+      if (!this.enabledGestures.has(activationGesture)) handMatches.delete(activationGesture);
       const swipeCandidate = this.swipeTracker.processPoint(
         hand.handId,
         hand.features.palmCenter,
@@ -1236,6 +1415,7 @@ var GestureEngine = class {
         timestamp
       );
       if (swipeCandidate && this.enabledGestures.has(swipeCandidate.gesture)) {
+        rawMatches.set(swipeCandidate.gesture, { score: swipeCandidate.score, duration: swipeCandidate.duration, data: { direction: swipeCandidate.direction } });
         const swipePayload = {
           gesture: swipeCandidate.gesture,
           handId: hand.handId,
@@ -1265,6 +1445,22 @@ var GestureEngine = class {
         matches: handMatches
       });
     }
+    const allowedCommands = this.commands.getOptions().commandGestures;
+    for (const raw of commandMatches.values()) {
+      for (const gesture of raw.keys()) {
+        if (gesture !== activationGesture && !(allowedCommands ?? allCandidateGestures).includes(gesture)) raw.delete(gesture);
+      }
+    }
+    const commands = this.commands.process(
+      trackingResult.updatedHands,
+      commandMatches,
+      timestamp,
+      this.options.stabilizationTimeMs ?? 150,
+      this.options.mirrored ?? false,
+      true
+    );
+    this.emitter.emit("recognition:state", this.commands.getState());
+    for (const command of commands) this.emitter.emit("command:detected", command);
     const emitted = this.stabilizer.processMatches(
       matchesByHand,
       allCandidateGestures,
@@ -1293,6 +1489,8 @@ var GestureEngine = class {
   }
   // Notifica cancelamento de todos os gestos por interrupção geral
   cancelAllGestures(reason, timestamp) {
+    this.commands.reset();
+    this.swipeTracker.clear();
     const cancelled = this.stabilizer.cancelAll(reason, timestamp);
     for (const ev of cancelled) {
       this.emitter.emit("gesture:cancelled", ev);
@@ -1765,6 +1963,24 @@ var BrowserGestureEngine = class {
     this.cameraAdapter.stop();
     await this.engine.destroy();
   }
+  configureRecognition(options) {
+    this.engine.configureRecognition(options);
+  }
+  setRecognitionMode(mode) {
+    this.engine.setRecognitionMode(mode);
+  }
+  getRecognitionOptions() {
+    return this.engine.getRecognitionOptions();
+  }
+  getRecognitionState() {
+    return this.engine.getRecognitionState();
+  }
+  getActiveGestures() {
+    return this.engine.getActiveGestures();
+  }
+  setOptions(options) {
+    this.engine.setOptions(options);
+  }
   startRecognition() {
     this.engine.startRecognition();
   }
@@ -1837,6 +2053,7 @@ export {
   GestureEngine,
   GestureEngineError,
   MediaPipePipeline,
+  RECOGNITION_MODES,
   createBrowserGestureEngine
 };
 //# sourceMappingURL=index.js.map

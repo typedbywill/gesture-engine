@@ -1,3 +1,4 @@
+import { CommandController } from "./command-controller.js";
 import { TypedEventEmitter } from "./event-emitter.js";
 import { STATIC_RECOGNIZERS } from "./recognizers/static-recognizers.js";
 import { SwipeTracker } from "./recognizers/swipe-recognizer.js";
@@ -13,6 +14,8 @@ import {
   GestureEngineError,
   type GestureEventMap,
   type GestureName,
+  type RecognitionOptions,
+  type RecognitionMode,
   type Handedness,
   type ProcessFrameInput,
   type ProcessFrameResult,
@@ -25,6 +28,7 @@ export class GestureEngine {
   private tracker: HandTracker;
   private stabilizer: GestureStabilizer;
   private swipeTracker: SwipeTracker;
+  private commands: CommandController;
 
   private state: EngineState = "UNINITIALIZED";
   private recognitionEnabled = true;
@@ -35,6 +39,7 @@ export class GestureEngine {
 
   constructor(options: GestureEngineOptions = {}) {
     this.options = { ...options };
+    this.commands = new CommandController(options.recognition);
 
     this.tracker = new HandTracker({
       maxHands: options.maxHands ?? 2,
@@ -180,7 +185,31 @@ export class GestureEngine {
     return this.state;
   }
 
+  configureRecognition(options: RecognitionOptions): void {
+    this.commands.configure(options);
+  }
+
+  setRecognitionMode(mode: RecognitionMode): void {
+    this.configureRecognition({ mode });
+  }
+
+  getRecognitionOptions(): RecognitionOptions { return this.commands.getOptions(); }
+  getRecognitionState() { return this.commands.getState(); }
+  getActiveGestures() { return this.stabilizer.getActiveGestures(); }
+
+  setOptions(options: Pick<GestureEngineOptions, "stabilizationTimeMs" | "absenceTimeoutMs" | "endGracePeriodMs" | "swipeCooldownMs">): void {
+    if (Object.values(options).some(v => v !== undefined && (!Number.isFinite(v) || v < 0))) {
+      throw new GestureEngineError({ code: "INVALID_OPTIONS", message: "Tempos devem ser finitos e não negativos." });
+    }
+    Object.assign(this.options, options);
+    this.stabilizer.setOptions(options);
+    this.tracker.setOptions(options);
+    if (options.swipeCooldownMs !== undefined) this.swipeTracker.setCooldown(options.swipeCooldownMs);
+    this.commands.reset();
+  }
+
   setMirrored(mirrored: boolean): void {
+    this.commands.reset();
     this.options.mirrored = mirrored;
     this.swipeTracker.setMirrored(mirrored);
   }
@@ -283,12 +312,17 @@ export class GestureEngine {
 
     // Se o reconhecimento estiver suspenso ou motor parado, apenas retorna o tracking
     if (!this.recognitionEnabled || (this.state !== "RUNNING" && this.state !== "INITIALIZED")) {
+      this.commands.process([], new Map(), timestamp, 0, false, false);
+      this.emitter.emit("recognition:state", this.commands.getState());
       return {
         timestamp,
         trackedHands: trackingResult.trackedHands,
         activeGestures: [],
       };
     }
+
+    // Raw gestures remain diagnostic; commands pass through the intent controller.
+    const commandMatches = new Map<string, Map<GestureName, { score: number; data?: Record<string, unknown>; duration?: number }>>();
 
     // Avaliação de gestos para cada mão ativa
     const matchesByHand = new Map<
@@ -300,6 +334,8 @@ export class GestureEngine {
     >();
 
     const allCandidateGestures = Array.from(this.enabledGestures);
+    const activationGesture = this.commands.getOptions().activationGesture!;
+    const evaluationGestures = [...new Set([...allCandidateGestures, activationGesture])];
 
     for (const hand of trackingResult.updatedHands) {
       const handMatches = new Map<GestureName, { score: number; data?: Record<string, unknown> }>();
@@ -317,7 +353,7 @@ export class GestureEngine {
       };
 
       // 1. Avalia gestos estáticos embutidos habilitados
-      for (const gesture of allCandidateGestures) {
+      for (const gesture of evaluationGestures) {
         if (gesture === BUILT_IN_GESTURES.UNKNOWN) continue;
         if (
           gesture === BUILT_IN_GESTURES.SWIPE_LEFT ||
@@ -355,7 +391,7 @@ export class GestureEngine {
 
       // 2. Avalia gestos personalizados registrados
       for (const [name, def] of this.customGestures.entries()) {
-        if (!this.enabledGestures.has(name)) continue;
+        if (!this.enabledGestures.has(name) && name !== activationGesture) continue;
 
         try {
           const evalResult = def.recognize(ctx);
@@ -395,6 +431,11 @@ export class GestureEngine {
         }
       }
 
+      const rawMatches = new Map<GestureName, { score: number; data?: Record<string, unknown>; duration?: number }>(handMatches);
+      commandMatches.set(hand.handId, rawMatches);
+      // Activation can be evaluated even when excluded from diagnostic gestures.
+      if (!this.enabledGestures.has(activationGesture)) handMatches.delete(activationGesture);
+
       // 4. Avalia gestos dinâmicos (Swipes)
       const swipeCandidate = this.swipeTracker.processPoint(
         hand.handId,
@@ -404,6 +445,7 @@ export class GestureEngine {
       );
 
       if (swipeCandidate && this.enabledGestures.has(swipeCandidate.gesture)) {
+        rawMatches.set(swipeCandidate.gesture, { score: swipeCandidate.score, duration: swipeCandidate.duration, data: { direction: swipeCandidate.direction } });
         // Para swipes, emite detected, start e end no ciclo de confirmação
         const swipePayload = {
           gesture: swipeCandidate.gesture,
@@ -438,6 +480,18 @@ export class GestureEngine {
       });
     }
 
+    // Exclude non-enabled commands unless explicitly supplied in commandGestures.
+    const allowedCommands = this.commands.getOptions().commandGestures;
+    for (const raw of commandMatches.values()) {
+      for (const gesture of raw.keys()) {
+        if (gesture !== activationGesture && !(allowedCommands ?? allCandidateGestures).includes(gesture)) raw.delete(gesture);
+      }
+    }
+    const commands = this.commands.process(trackingResult.updatedHands, commandMatches, timestamp,
+      this.options.stabilizationTimeMs ?? 150, this.options.mirrored ?? false, true);
+    this.emitter.emit("recognition:state", this.commands.getState());
+    for (const command of commands) this.emitter.emit("command:detected", command);
+
     // Passa correspondências estáticas para estabilização temporal
     const emitted = this.stabilizer.processMatches(
       matchesByHand,
@@ -471,6 +525,8 @@ export class GestureEngine {
 
   // Notifica cancelamento de todos os gestos por interrupção geral
   private cancelAllGestures(reason: GestureCancellationReason, timestamp: number): void {
+    this.commands.reset();
+    this.swipeTracker.clear();
     const cancelled = this.stabilizer.cancelAll(reason, timestamp);
     for (const ev of cancelled) {
       this.emitter.emit("gesture:cancelled", ev);

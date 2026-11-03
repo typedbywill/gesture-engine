@@ -7,6 +7,13 @@ export { GestureStabilizer } from "./stabilizer.js";
 export { HandTracker } from "./tracker.js";
 
 export {
+  RECOGNITION_MODES,
+  type RecognitionMode,
+  type RecognitionOptions,
+  type RecognitionStateEvent,
+  type RecognitionHandState,
+  type ActivationRegion,
+  type CommandDetectedEvent,
   BUILT_IN_GESTURES,
   GESTURE_EVENTS,
   GestureEngineError,

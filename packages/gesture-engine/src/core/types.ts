@@ -15,6 +15,8 @@ export const GESTURE_EVENTS = {
   GESTURE_CANCELLED: "gesture:cancelled",
   CAMERA_ERROR: "camera:error",
   ERROR: "error",
+  COMMAND_DETECTED: "command:detected",
+  RECOGNITION_STATE: "recognition:state",
 } as const;
 
 export const BUILT_IN_GESTURES = {
@@ -215,6 +217,8 @@ export interface CameraErrorEvent {
 }
 
 export interface GestureEventMap {
+  "command:detected": CommandDetectedEvent;
+  "recognition:state": RecognitionStateEvent;
   "ready": ReadyEvent;
   "hand:detected": HandDetectedEvent;
   "hand:tracking": HandTrackingEvent;
@@ -228,7 +232,44 @@ export interface GestureEventMap {
   "error": GestureEngineError;
 }
 
+/** Command safety settings. Raw gesture events remain available for diagnostics. */
+export const RECOGNITION_MODES = {
+  ALWAYS_ON: "ALWAYS_ON", ARMED: "ARMED", BYPASS: "BYPASS",
+} as const;
+export type RecognitionMode = typeof RECOGNITION_MODES[keyof typeof RECOGNITION_MODES];
+
+/** Normalized camera coordinates, after horizontal mirroring when enabled. */
+export interface ActivationRegion { x: number; y: number; width: number; height: number }
+export interface RecognitionOptions {
+  mode?: RecognitionMode;
+  activationGesture?: GestureName;
+  activationTimeMs?: number;
+  armedTimeoutMs?: number;
+  requireRelease?: boolean;
+  releaseTimeMs?: number;
+  region?: ActivationRegion | null;
+  /** Priority order; first matching gesture wins, one command per hand/frame. */
+  commandGestures?: GestureName[];
+}
+export interface RecognitionHandState {
+  handId: string;
+  status: "OUTSIDE_ROI" | "WAITING_ACTIVATION" | "ACTIVATING" | "WAITING_RELEASE" | "READY" | "STABILIZING";
+  progress: number;
+  armed: boolean;
+  gesture?: GestureName;
+}
+export interface RecognitionStateEvent {
+  timestamp: number;
+  mode: RecognitionMode;
+  enabled: boolean;
+  hands: RecognitionHandState[];
+}
+export interface CommandDetectedEvent extends BaseGestureEvent {
+  mode: RecognitionMode;
+}
+
 export interface GestureEngineOptions {
+  recognition?: RecognitionOptions;
   maxHands?: number;
   gestures?: GestureName[];
   stabilizationTimeMs?: number; // confirmação de pose (padrão 150ms)

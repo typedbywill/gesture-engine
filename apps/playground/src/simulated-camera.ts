@@ -16,6 +16,7 @@ import {
 } from "./synthetic-hands.js";
 
 export type SimulationMode =
+  | "NO_HAND"
   | "AUTO_TOUR"
   | "OPEN_PALM"
   | "CLOSED_FIST"
@@ -37,6 +38,9 @@ export class SimulatedCamera {
   private animId: number | null = null;
   private currentMode: SimulationMode = "AUTO_TOUR";
   private onFrameCallback: ((hands: HandInput[], timestamp: number) => void) | null = null;
+
+  private position: { x: number; y: number } | null = null;
+  setPosition(position: { x: number; y: number } | null): void { this.position = position; }
 
   private startTime = 0;
   private tourIndex = 0;
@@ -70,6 +74,12 @@ export class SimulatedCamera {
       if (!this.isRunning) return;
 
       const hands = this.generateFrame(now);
+      if (this.position) {
+        for (const hand of hands) for (const p of hand.landmarks) {
+          p.x += this.position.x - 0.5;
+          p.y += this.position.y - 0.55;
+        }
+      }
       if (this.onFrameCallback) {
         this.onFrameCallback(hands, Math.round(now));
       }
@@ -93,6 +103,7 @@ export class SimulatedCamera {
   }
 
   private generateFrame(now: number): HandInput[] {
+    if (this.currentMode === "NO_HAND") return [];
     const elapsed = now - this.startTime;
 
     if (this.currentMode === "SWIPE_TEST") {

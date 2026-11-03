@@ -85,7 +85,8 @@
             <div class="simulation-select-wrapper hidden" id="simulationSelectWrapper">
               <label for="simulationSelect">Pose Simulada:</label>
               <select id="simulationSelect">
-                <option value="AUTO_TOUR">Tour Automático de Gestos</option>
+                <option value="NO_HAND">Sem mão · liberar pose</option>
+                <option value="AUTO_TOUR" selected>Tour Automático de Gestos</option>
                 <option value="OPEN_PALM">Palma Aberta (OPEN_PALM)</option>
                 <option value="CLOSED_FIST">Punho Fechado (CLOSED_FIST)</option>
                 <option value="NUMBER_ONE">Número 1 (Indicador)</option>
@@ -101,9 +102,32 @@
                 <option value="PINCH">Pinch (Pinça)</option>
                 <option value="SWIPE_TEST">Teste de Swipe (Deslocamento)</option>
               </select>
+              <label class="checkbox-label hidden" id="simulationPositionWrapper"><input type="checkbox" id="simulationInsideRoi">Posicionar simulação na ROI</label>
             </div>
           </div>
         </div>
+
+        <section class="card live-demo" aria-labelledby="liveDemoTitle">
+          <div class="card-header"><h2 class="card-title" id="liveDemoTitle">Live HUD · controle por gestos</h2><button class="btn btn-sm btn-ghost" id="resetLiveDemo">Reiniciar demo</button></div>
+          <div class="card-body">
+            <div class="live-status"><strong id="recognitionBadge">ALWAYS_ON</strong><span id="commandCount">0 comandos aceitos</span></div>
+            <p class="section-desc" id="recognitionHelp">Inicie a captura para explorar o HUD.</p>
+            <div id="recognitionHands" class="recognition-hands"></div>
+            <div class="stage-preview" id="stagePreview">
+              <span class="stage-eyebrow">CENA SELECIONADA</span><h3 id="sceneTitle">Aurora</h3>
+              <div class="stage-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+              <span id="transportState">Pausado</span><span id="volumeState">Intensidade: 50%</span>
+            </div>
+            <div class="scene-tabs" id="sceneTabs"><span class="selected">01 · Aurora</span><span>02 · Pulse</span><span>03 · Eclipse</span></div>
+            <p id="lastCommand" class="last-command" role="status">Aguardando o primeiro comando.</p>
+            <div class="gesture-guide">
+              <span>☝ Número 1 · cena anterior</span><span>✌ Número 2 · próxima cena</span>
+              <span>🤏 Pinça · tocar / pausar</span><span>✊ Punho · blackout</span>
+              <span>👍 Polegar acima · + intensidade</span><span>👎 Polegar abaixo · − intensidade</span>
+            </div>
+            <p class="form-help">Demo visual, sem áudio ou dispositivos externos. Mantenha a pose pelo tempo de estabilização e libere antes do próximo comando.</p>
+          </div>
+        </section>
 
         <!-- Event Log -->
         <div class="card log-card">
@@ -125,6 +149,27 @@
 
       <!-- Sidebar Settings & Catalog Column -->
       <aside class="sidebar-section">
+        <section class="card safety-card" aria-labelledby="safetyTitle">
+          <div class="card-header"><h2 class="card-title" id="safetyTitle">Reconhecimento · uso ao vivo</h2></div>
+          <div class="card-body">
+            <div class="form-group"><label for="recognitionMode">Modo de comandos</label>
+              <select id="recognitionMode"><option value="ALWAYS_ON">ALWAYS_ON · contínuo</option><option value="ARMED">ARMED · ativar antes de comandar</option><option value="BYPASS">BYPASS · ignorar comandos</option></select>
+            </div>
+            <label class="checkbox-label"><input type="checkbox" id="keepCameraInBypass" checked>Manter captura ao entrar em BYPASS</label>
+            <div class="form-group"><label for="activationGesture">Gesto de ativação</label>
+              <select id="activationGesture"><option value="OPEN_PALM">Palma aberta</option><option value="ROCK_ON">Rock on</option><option value="VICTORY">Vitória</option></select>
+              <small class="form-help">Em ARMED: segure por 500 ms, libere e faça um comando. Uma ativação aceita um comando por mão.</small>
+            </div>
+            <div class="form-group"><label for="armedTimeout">Janela após ativação</label><select id="armedTimeout"><option value="3000">3 segundos</option><option value="5000" selected>5 segundos</option><option value="10000">10 segundos</option></select></div>
+            <label class="checkbox-label"><input type="checkbox" id="requireRelease" checked>Exigir liberação após comando</label>
+            <small class="form-help">Exige 150 ms fora da pose anterior. Desativado: permite repetir a ação a cada intervalo de estabilização.</small>
+            <div class="form-group"><label for="activationRegion">Região de ativação (ROI)</label>
+              <select id="activationRegion"><option value="OFF">Toda a imagem</option><option value="TOP_RIGHT">Canto superior direito</option><option value="TOP_LEFT">Canto superior esquerdo</option><option value="CENTER">Centro da imagem</option></select>
+              <small class="form-help">O centro amarelo da palma deve estar na área marcada, tanto para ativar quanto para comandar.</small>
+            </div>
+            <p class="form-help">O HUD responde a command:detected. Os eventos gesture:* continuam no log para diagnóstico, inclusive em BYPASS.</p>
+          </div>
+        </section>
         <!-- Settings Panel -->
         <div class="card">
           <div class="card-header">

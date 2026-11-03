@@ -1,6 +1,8 @@
 import { GestureEngine } from "../core/engine.js";
 import {
   type CustomGestureDefinition,
+  type RecognitionOptions,
+  type RecognitionMode,
   type GestureCancellationReason,
   GestureEngineError,
   type GestureEngineOptions,
@@ -163,6 +165,13 @@ export class BrowserGestureEngine {
     this.cameraAdapter.stop();
     await this.engine.destroy();
   }
+
+  configureRecognition(options: RecognitionOptions): void { this.engine.configureRecognition(options); }
+  setRecognitionMode(mode: RecognitionMode): void { this.engine.setRecognitionMode(mode); }
+  getRecognitionOptions() { return this.engine.getRecognitionOptions(); }
+  getRecognitionState() { return this.engine.getRecognitionState(); }
+  getActiveGestures() { return this.engine.getActiveGestures(); }
+  setOptions(options: Pick<GestureEngineOptions, "stabilizationTimeMs" | "absenceTimeoutMs" | "endGracePeriodMs" | "swipeCooldownMs">): void { this.engine.setOptions(options); }
 
   startRecognition(): void {
     this.engine.startRecognition();
