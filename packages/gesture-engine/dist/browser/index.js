@@ -706,14 +706,12 @@ function extractHandFeatures(landmarks, handedness) {
     z: mcpCenter.z - wrist.z
   });
   const analyzeFinger = (mcp, pip, dip, tip) => {
-    const tipToWrist = dist3D(tip, wrist);
-    const pipToWrist = dist3D(pip, wrist);
-    const dipToWrist = dist3D(dip, wrist);
     const tipToMcp = dist3D(tip, mcp);
+    const pipToMcp = dist3D(pip, mcp);
     const fingerLength = dist3D(mcp, pip) + dist3D(pip, dip) + dist3D(dip, tip);
     const lengthRatio = fingerLength > 0 ? tipToMcp / fingerLength : 0;
-    const extensionRatio = Math.max(0, Math.min(1, (lengthRatio - 0.42) / (0.82 - 0.42)));
-    const isExtended = extensionRatio >= 0.6 && tipToWrist > pipToWrist * 1.05 && tipToWrist > dipToWrist;
+    const extensionRatio = Math.max(0, Math.min(1, (lengthRatio - 0.45) / (0.8 - 0.45)));
+    const isExtended = extensionRatio >= 0.6 && tipToMcp > pipToMcp * 1.15;
     const dirVector = normalizeVector({
       x: tip.x - pip.x,
       y: tip.y - pip.y,
@@ -728,13 +726,12 @@ function extractHandFeatures(landmarks, handedness) {
     };
   };
   const analyzeThumb = () => {
-    const thumbSegmentsLength = dist3D(thumbCmc, thumbMcp) + dist3D(thumbMcp, thumbIp) + dist3D(thumbIp, thumbTip);
-    const tipToCmc = dist3D(thumbTip, thumbCmc);
-    const straightness = thumbSegmentsLength > 0 ? tipToCmc / thumbSegmentsLength : 0;
-    const tipToPinkyMcp = dist3D(thumbTip, pinkyMcp) / handScale;
+    const thumbSegmentsLength = dist3D(thumbMcp, thumbIp) + dist3D(thumbIp, thumbTip);
+    const tipToMcp = dist3D(thumbTip, thumbMcp);
+    const straightness = thumbSegmentsLength > 0 ? tipToMcp / thumbSegmentsLength : 0;
     const tipToIndexMcp = dist3D(thumbTip, indexMcp) / handScale;
-    const extensionRatio = Math.max(0, Math.min(1, (straightness - 0.5) / (0.88 - 0.5)));
-    const isExtended = extensionRatio >= 0.55 && tipToPinkyMcp > 0.62;
+    const extensionRatio = Math.max(0, Math.min(1, (straightness - 0.55) / (0.85 - 0.55)));
+    const isExtended = extensionRatio >= 0.55 && tipToIndexMcp > 0.4;
     const dirVector = normalizeVector({
       x: thumbTip.x - thumbMcp.x,
       y: thumbTip.y - thumbMcp.y,

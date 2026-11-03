@@ -99,18 +99,17 @@ export function extractHandFeatures(
     dip: Landmark3D,
     tip: Landmark3D
   ): FingerState => {
-    const tipToWrist = dist3D(tip, wrist);
-    const pipToWrist = dist3D(pip, wrist);
-    const dipToWrist = dist3D(dip, wrist);
     const tipToMcp = dist3D(tip, mcp);
+    const pipToMcp = dist3D(pip, mcp);
     const fingerLength = dist3D(mcp, pip) + dist3D(pip, dip) + dist3D(dip, tip);
 
     const lengthRatio = fingerLength > 0 ? tipToMcp / fingerLength : 0;
     // Straight finger: lengthRatio ~ 0.85-1.0; curled: ~ 0.3-0.5
-    const extensionRatio = Math.max(0, Math.min(1, (lengthRatio - 0.42) / (0.82 - 0.42)));
+    const extensionRatio = Math.max(0, Math.min(1, (lengthRatio - 0.45) / (0.80 - 0.45)));
 
-    // Dedo estendido requer tanto boa extensão quanto ponta mais distante do pulso que a articulação PIP
-    const isExtended = extensionRatio >= 0.6 && tipToWrist > pipToWrist * 1.05 && tipToWrist > dipToWrist;
+    // Dedo estendido: boa extensão linear e ponta mais distante do MCP que a articulação PIP
+    // Essa condição independe da orientação (UP, DOWN, LEFT, RIGHT)
+    const isExtended = extensionRatio >= 0.6 && tipToMcp > pipToMcp * 1.15;
 
     const dirVector = normalizeVector({
       x: tip.x - pip.x,
@@ -129,19 +128,16 @@ export function extractHandFeatures(
 
   // Análise do polegar
   const analyzeThumb = (): FingerState => {
-    const thumbSegmentsLength =
-      dist3D(thumbCmc, thumbMcp) + dist3D(thumbMcp, thumbIp) + dist3D(thumbIp, thumbTip);
-    const tipToCmc = dist3D(thumbTip, thumbCmc);
-    const straightness = thumbSegmentsLength > 0 ? tipToCmc / thumbSegmentsLength : 0;
+    const thumbSegmentsLength = dist3D(thumbMcp, thumbIp) + dist3D(thumbIp, thumbTip);
+    const tipToMcp = dist3D(thumbTip, thumbMcp);
+    const straightness = thumbSegmentsLength > 0 ? tipToMcp / thumbSegmentsLength : 0;
 
-    // Distância da ponta do polegar até o MCP do mínimo (afastamento da palma)
-    const tipToPinkyMcp = dist3D(thumbTip, pinkyMcp) / handScale;
-    // Distância da ponta do polegar até o MCP do indicador
+    // Distância da ponta do polegar até o MCP do indicador e mínimo normalizadas pela escala
     const tipToIndexMcp = dist3D(thumbTip, indexMcp) / handScale;
 
-    // Polegar estendido: ponta afastada e alinhada
-    const extensionRatio = Math.max(0, Math.min(1, (straightness - 0.5) / (0.88 - 0.5)));
-    const isExtended = extensionRatio >= 0.55 && tipToPinkyMcp > 0.62;
+    // Polegar estendido: segmentos alinhados e ponta afastada do MCP do indicador
+    const extensionRatio = Math.max(0, Math.min(1, (straightness - 0.55) / (0.85 - 0.55)));
+    const isExtended = extensionRatio >= 0.55 && tipToIndexMcp > 0.40;
 
     const dirVector = normalizeVector({
       x: thumbTip.x - thumbMcp.x,
