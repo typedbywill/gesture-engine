@@ -247,6 +247,8 @@ export interface RecognitionOptions {
   armedTimeoutMs?: number;
   requireRelease?: boolean;
   releaseTimeMs?: number;
+  /** Larger gaps reset pending confirmation (default 250 ms). */
+  maxFrameGapMs?: number;
   region?: ActivationRegion | null;
   /** Priority order; first matching gesture wins, one command per hand/frame. */
   commandGestures?: GestureName[];

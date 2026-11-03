@@ -200,11 +200,7 @@ export class BrowserGestureEngine {
 
   async switchCamera(deviceId: string): Promise<void> {
     // Interrompe gestos ativos por troca de câmera
-    const now = Date.now();
-    const cancelled = (this.engine as any).stabilizer.cancelAll("camera_switch", now);
-    for (const ev of cancelled) {
-      (this.engine as any).emitter.emit("gesture:cancelled", ev);
-    }
+    this.engine.resetRecognition("camera_switch");
 
     try {
       await this.cameraAdapter.switchCamera(deviceId);

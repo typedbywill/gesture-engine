@@ -2,7 +2,6 @@ import {
   BUILT_IN_GESTURES,
   createBrowserGestureEngine,
   type HandTrackingEvent,
-  type GestureEventMap,
 } from "gesture-engine/browser";
 import { setupLiveHUD } from "./live-hud.js";
 import { LandmarkDrawer } from "./drawer.js";
@@ -31,6 +30,101 @@ const hudActiveGestures = document.getElementById("hudActiveGestures") as HTMLDi
 const logContainer = document.getElementById("logContainer") as HTMLDivElement;
 const btnClearLog = document.getElementById("btnClearLog") as HTMLButtonElement;
 const chkAutoScroll = document.getElementById("chkAutoScroll") as HTMLInputElement;
+
+// Sidebar Tabs & History Metrics
+const tabButtons = document.querySelectorAll<HTMLButtonElement>(".sidebar-tabs .tab-btn");
+const tabPanels = document.querySelectorAll<HTMLDivElement>(".sidebar-section .tab-panel");
+const historyCounterBadge = document.getElementById("historyCounterBadge") as HTMLSpanElement;
+const metricTotalGestures = document.getElementById("metricTotalGestures") as HTMLSpanElement;
+const metricLastDuration = document.getElementById("metricLastDuration") as HTMLSpanElement;
+const metricTotalCommands = document.getElementById("metricTotalCommands") as HTMLSpanElement;
+const filterChips = document.querySelectorAll<HTMLButtonElement>(".history-filter-bar .filter-chip");
+
+let activeTabId = "tabHistory";
+let unreadHistoryCount = 0;
+let totalGesturesCount = 0;
+let totalCommandsCount = 0;
+let currentFilter: "all" | "gesture" | "command" | "hand" | "system" = "all";
+const gestureStartTimes = new Map<string, number>();
+
+// Mapeamento de ícones amigáveis para gestos
+const GESTURE_ICONS: Record<string, string> = {
+  OPEN_PALM: "🖐️",
+  NUMBER_FIVE: "🖐️",
+  CLOSED_FIST: "✊",
+  NUMBER_ONE: "☝️",
+  POINTING_UP: "☝️",
+  NUMBER_TWO: "✌️",
+  VICTORY: "✌️",
+  NUMBER_THREE: "🤟",
+  NUMBER_FOUR: "🖖",
+  ROCK_ON: "🤘",
+  THUMBS_UP: "👍",
+  THUMBS_DOWN: "👎",
+  OK_SIGN: "👌",
+  PINCH: "🤏",
+  SWIPE_LEFT: "👈💨",
+  SWIPE_RIGHT: "👉💨",
+  SWIPE_UP: "👆💨",
+  SWIPE_DOWN: "👇💨",
+  I_LOVE_YOU: "🤟",
+  SHAKA: "🤙",
+  SPOCK: "🖖",
+};
+
+// Alternância de Abas na Sidebar
+tabButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const targetTabId = btn.dataset.tab;
+    if (!targetTabId) return;
+
+    tabButtons.forEach((b) => {
+      const isTarget = b === btn;
+      b.classList.toggle("active", isTarget);
+      b.setAttribute("aria-selected", String(isTarget));
+    });
+
+    tabPanels.forEach((panel) => {
+      panel.classList.toggle("active", panel.id === targetTabId);
+    });
+
+    activeTabId = targetTabId;
+    if (activeTabId === "tabHistory") {
+      unreadHistoryCount = 0;
+      historyCounterBadge.textContent = "0";
+      btn.classList.remove("has-unread");
+    }
+  });
+});
+
+// Filtros de Categoria do Histórico
+filterChips.forEach((chip) => {
+  chip.addEventListener("click", () => {
+    filterChips.forEach((c) => c.classList.remove("active"));
+    chip.classList.add("active");
+    currentFilter = (chip.dataset.filter || "all") as any;
+    applyHistoryFilter();
+  });
+});
+
+function applyHistoryFilter() {
+  const items = logContainer.querySelectorAll<HTMLDivElement>(".history-item");
+  items.forEach((item) => {
+    const cat = item.dataset.category;
+    if (currentFilter === "all" || cat === currentFilter) {
+      item.style.display = "flex";
+    } else {
+      item.style.display = "none";
+    }
+  });
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${Math.round(ms)} ms`;
+  }
+  return `${(ms / 1000).toFixed(2)} s`;
+}
 
 const sliderStabilization = document.getElementById("sliderStabilization") as HTMLInputElement;
 const valStabilization = document.getElementById("valStabilization") as HTMLSpanElement;
@@ -98,13 +192,26 @@ function updateSimulationPosition() {
 }
 document.getElementById("simulationInsideRoi")!.addEventListener("change", updateSimulationPosition);
 
-// Event Logging
-function appendLog(eventType: string, details: string, cssClass = "") {
+// Event Logging & Rich History Management
+interface HistoryEntryParams {
+  category: "gesture" | "command" | "hand" | "system" | "error";
+  eventType?: string;
+  badgeLabel: string;
+  badgeClass: string;
+  title: string;
+  handId?: string;
+  durationMs?: number;
+  score?: number;
+  details?: string;
+}
+
+function addHistoryEntry(entry: HistoryEntryParams) {
   if (logContainer.querySelector(".log-placeholder")) {
     logContainer.innerHTML = "";
   }
 
-  const timeStr = new Date().toLocaleTimeString("pt-BR", {
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString("pt-BR", {
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
@@ -112,24 +219,97 @@ function appendLog(eventType: string, details: string, cssClass = "") {
     fractionalSecondDigits: 3,
   });
 
-  const row = document.createElement("div");
-  row.className = "log-row";
-  row.innerHTML = `
-    <span class="log-time">${timeStr}</span>
-    <span class="log-event ${cssClass}">${eventType}</span>
-    <span class="log-details">${details}</span>
+  const item = document.createElement("div");
+  const eventSub = entry.eventType ? entry.eventType.replace(/^[a-z]+:/, "") : "";
+  item.className = `history-item category-${entry.category} ${eventSub ? `event-${eventSub}` : ""}`;
+  item.dataset.category = entry.category;
+
+  let durationTagHtml = "";
+  if (entry.durationMs !== undefined && entry.durationMs > 0) {
+    const formattedDur = formatDuration(entry.durationMs);
+    durationTagHtml = `<span class="history-duration-tag" title="Tempo sustentado do gesto">⏱️ ${formattedDur}</span>`;
+    metricLastDuration.textContent = formattedDur;
+  }
+
+  let tagsHtml = "";
+  if (entry.handId) {
+    tagsHtml += `<span class="history-tag">Mão: <strong>${entry.handId}</strong></span>`;
+  }
+  if (entry.score !== undefined) {
+    tagsHtml += `<span class="history-tag history-score-tag">Confiança: <strong>${Math.round(entry.score * 100)}%</strong></span>`;
+  }
+  if (entry.details) {
+    tagsHtml += `<span class="history-tag">${entry.details}</span>`;
+  }
+
+  item.innerHTML = `
+    <div class="history-item-header">
+      <div class="history-item-header-left">
+        <span class="history-badge ${entry.badgeClass}">${entry.badgeLabel}</span>
+        <span class="history-title" title="${entry.title}">${entry.title}</span>
+      </div>
+      <div class="history-item-header-right">
+        ${durationTagHtml}
+        <span class="history-time">${timeStr}</span>
+      </div>
+    </div>
+    ${tagsHtml ? `<div class="history-item-body">${tagsHtml}</div>` : ""}
   `;
 
-  logContainer.appendChild(row);
+  if (currentFilter !== "all" && entry.category !== currentFilter) {
+    item.style.display = "none";
+  }
 
-  // Limite de 150 linhas
+  logContainer.appendChild(item);
+
+  // Limite de 150 itens
   while (logContainer.children.length > 150) {
     logContainer.removeChild(logContainer.firstChild!);
+  }
+
+  // Notificação de evento não lido se a aba ativa não for o Histórico
+  if (activeTabId !== "tabHistory") {
+    unreadHistoryCount++;
+    historyCounterBadge.textContent = unreadHistoryCount > 99 ? "99+" : String(unreadHistoryCount);
+    document.getElementById("tabBtnHistory")?.classList.add("has-unread");
   }
 
   if (chkAutoScroll.checked) {
     logContainer.scrollTop = logContainer.scrollHeight;
   }
+}
+
+function appendLog(eventType: string, details: string, cssClass = "") {
+  let category: "gesture" | "command" | "hand" | "system" | "error" = "system";
+  let badgeLabel = eventType.toUpperCase();
+  let badgeClass = "badge-system";
+
+  if (eventType.startsWith("gesture:")) {
+    category = "gesture";
+    const sub = eventType.split(":")[1];
+    badgeLabel = sub.toUpperCase();
+    badgeClass = sub === "start" ? "badge-start" : sub === "end" ? "badge-end" : sub === "cancelled" ? "badge-cancelled" : "badge-detected";
+  } else if (eventType.startsWith("command:")) {
+    category = "command";
+    badgeLabel = "COMANDO";
+    badgeClass = "badge-command";
+  } else if (eventType.startsWith("hand:")) {
+    category = "hand";
+    badgeLabel = "MÃO";
+    badgeClass = "badge-hand";
+  } else if (eventType === "error" || eventType === "camera:error") {
+    category = "error";
+    badgeLabel = "ERRO";
+    badgeClass = "badge-error";
+  }
+
+  addHistoryEntry({
+    category,
+    eventType,
+    badgeLabel,
+    badgeClass,
+    title: details,
+  });
 }
 
 // Atualização de HUD de Gestos Ativos
@@ -194,16 +374,39 @@ new ResizeObserver(scheduleRender).observe(videoContainer);
 videoEl.addEventListener("resize", scheduleRender);
 
 engine.on("command:detected", ({ gesture, handId }) => {
-  appendLog("command:detected", `${gesture} aceito para ${handId}`, "gesture-start");
+  totalCommandsCount++;
+  metricTotalCommands.textContent = String(totalCommandsCount);
+  const icon = GESTURE_ICONS[gesture] || "⚡";
+  addHistoryEntry({
+    category: "command",
+    eventType: "command:detected",
+    badgeLabel: "COMANDO",
+    badgeClass: "badge-command",
+    title: `${icon} ${gesture} aceito`,
+    handId,
+  });
 });
 
 // Inscrição em Eventos Tipados
 engine.on("ready", () => {
-  appendLog("ready", "Motor inicializado e pronto para processamento.");
+  addHistoryEntry({
+    category: "system",
+    eventType: "ready",
+    badgeLabel: "PRONTO",
+    badgeClass: "badge-system",
+    title: "Motor inicializado e pronto para processamento.",
+  });
 });
 
 engine.on("hand:detected", ({ handId, handedness }) => {
-  appendLog("hand:detected", `Mão ${handedness} identificada com ID: ${handId}`, "hand-detected");
+  addHistoryEntry({
+    category: "hand",
+    eventType: "hand:detected",
+    badgeLabel: "TRACKING",
+    badgeClass: "badge-hand",
+    title: `Mão ${handedness} identificada`,
+    handId,
+  });
 });
 
 engine.on("hand:tracking", (hand) => {
@@ -225,36 +428,97 @@ engine.on("hand:tracking", (hand) => {
 engine.on("hand:lost", ({ handId, handedness }) => {
   activeHandsMap.delete(handId);
   scheduleRender();
-  appendLog("hand:lost", `Mão ${handedness} (${handId}) perdida após ausência`, "hand-lost");
+  addHistoryEntry({
+    category: "hand",
+    eventType: "hand:lost",
+    badgeLabel: "PERDIDA",
+    badgeClass: "badge-hand",
+    title: `Mão ${handedness} perdida após ausência`,
+    handId,
+  });
 });
 
 engine.on("gesture:detected", ({ gesture, handId, score, data }) => {
-  const scorePct = Math.round(score * 100);
-  const extra = data ? ` (${JSON.stringify(data)})` : "";
-  appendLog("gesture:detected", `${gesture} na mão ${handId} [Score: ${scorePct}%]${extra}`, "gesture-detected");
+  const icon = GESTURE_ICONS[gesture] || "✋";
+  const extra = data ? JSON.stringify(data) : undefined;
+  addHistoryEntry({
+    category: "gesture",
+    eventType: "gesture:detected",
+    badgeLabel: "DETECTADO",
+    badgeClass: "badge-detected",
+    title: `${icon} ${gesture}`,
+    handId,
+    score,
+    details: extra,
+  });
 });
 
 engine.on("gesture:start", ({ gesture, handId }) => {
-  appendLog("gesture:start", `${gesture} confirmado na mão ${handId}`, "gesture-start");
+  totalGesturesCount++;
+  metricTotalGestures.textContent = String(totalGesturesCount);
+  gestureStartTimes.set(`${handId}:${gesture}`, performance.now());
+  const icon = GESTURE_ICONS[gesture] || "✋";
+  addHistoryEntry({
+    category: "gesture",
+    eventType: "gesture:start",
+    badgeLabel: "START",
+    badgeClass: "badge-start",
+    title: `${icon} ${gesture} confirmado`,
+    handId,
+  });
 });
 
 engine.on("gesture:end", ({ gesture, handId, duration }) => {
-  const durSec = ((duration ?? 0) / 1000).toFixed(2);
-  appendLog("gesture:end", `${gesture} finalizado na mão ${handId} após ${durSec}s`, "gesture-end");
+  const startTime = gestureStartTimes.get(`${handId}:${gesture}`);
+  const measuredDur = duration ?? (startTime ? performance.now() - startTime : 0);
+  gestureStartTimes.delete(`${handId}:${gesture}`);
+  const icon = GESTURE_ICONS[gesture] || "✋";
+  addHistoryEntry({
+    category: "gesture",
+    eventType: "gesture:end",
+    badgeLabel: "END",
+    badgeClass: "badge-end",
+    title: `${icon} ${gesture} finalizado`,
+    handId,
+    durationMs: measuredDur,
+    details: `Sustentado por ${formatDuration(measuredDur)}`,
+  });
 });
 
 engine.on("gesture:cancelled", ({ gesture, handId, reason }) => {
+  gestureStartTimes.delete(`${handId}:${gesture}`);
   scheduleRender();
-  appendLog("gesture:cancelled", `${gesture} cancelado na mão ${handId} [Motivo: ${reason}]`, "gesture-cancelled");
+  const icon = GESTURE_ICONS[gesture] || "✋";
+  addHistoryEntry({
+    category: "gesture",
+    eventType: "gesture:cancelled",
+    badgeLabel: "CANCEL",
+    badgeClass: "badge-cancelled",
+    title: `${icon} ${gesture} cancelado`,
+    handId,
+    details: `Motivo: ${reason}`,
+  });
 });
 
 engine.on("camera:error", ({ code, message }) => {
-  appendLog("camera:error", `[${code}] ${message}`, "error");
+  addHistoryEntry({
+    category: "error",
+    eventType: "camera:error",
+    badgeLabel: "ERRO",
+    badgeClass: "badge-error",
+    title: `[${code}] ${message}`,
+  });
   setStatus("error", `Erro: ${code}`);
 });
 
 engine.on("error", (err) => {
-  appendLog("error", `[${err.code}] ${err.message}`, "error");
+  addHistoryEntry({
+    category: "error",
+    eventType: "error",
+    badgeLabel: "ERRO",
+    badgeClass: "badge-error",
+    title: `[${err.code}] ${err.message}`,
+  });
 });
 
 function setStatus(state: "ready" | "running" | "paused" | "error", text: string) {
@@ -457,7 +721,8 @@ sliderCooldown.addEventListener("input", () => {
 
 // Clear Log
 btnClearLog.addEventListener("click", () => {
-  logContainer.innerHTML = '<div class="log-placeholder">Log limpo.</div>';
+  logContainer.innerHTML = '<div class="log-placeholder">Histórico limpo.</div>';
+  metricLastDuration.textContent = "--";
 });
 
 // Custom Gesture Registration

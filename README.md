@@ -280,7 +280,7 @@ Acesse em seu navegador: `http://localhost:3000`
 
 ## 🧪 Testes Automatizados
 
-O SDK conta com uma suíte de 45 testes com Vitest cobrindo:
+A suíte automatizada com Vitest cobre:
 - Fixtures sintéticas de landmarks para todas as poses e ambas as mãos (esquerda/direita).
 - Invariância de escala e variações limítrofes.
 - Detecção dinâmica de Swipes (4 direções, cooldown, espelhamento, timestamps inválidos).
@@ -289,7 +289,112 @@ O SDK conta com uma suíte de 45 testes com Vitest cobrindo:
 - Gestos customizados (rejeição de nomes duplicados, isolamento de falhas).
 - Mocks completos de câmera (`getUserMedia`, troca de câmera, liberação de recursos).
 - Importação do core em Node.js puro sem variáveis globais de DOM.
+- Comandos protegidos: modos, ativação por mão, timeout, release, ROI, estabilidade, swipes e timestamps inválidos.
 
 ```bash
 pnpm test
 ```
+
+## Comandos protegidos para uso ao vivo
+
+O SDK separa **observação de poses** (`gesture:*`) de **intenção de executar uma ação**
+(`command:detected`). Conecte ações da aplicação a `command:detected` para aplicar
+as proteções abaixo. Os eventos `gesture:*` e `hand:*` continuam disponíveis para
+tracking e diagnóstico em todos os modos, inclusive `BYPASS`.
+
+| Modo | Comportamento dos comandos |
+| --- | --- |
+| `ALWAYS_ON` | Aceita comandos continuamente, respeitando ROI, estabilidade e liberação. |
+| `ARMED` | Exige gesto de ativação estável, liberação da pose e um comando dentro da janela configurada. Cada ativação aceita **um comando por mão**. |
+| `BYPASS` | Bloqueia comandos e descarta confirmações e ativações pendentes. A captura é independente: pode continuar ou ser parada com `stop()`. |
+
+```ts
+import { GestureEngine } from "gesture-engine/core";
+
+// As mesmas opções e métodos existem em createBrowserGestureEngine().
+const engine = new GestureEngine({
+  stabilizationTimeMs: 250,
+  recognition: {
+    mode: "ARMED",
+    activationGesture: "OPEN_PALM",
+    activationTimeMs: 500,
+    armedTimeoutMs: 5000,
+    requireRelease: true,
+    releaseTimeMs: 150,
+    region: { x: 0.55, y: 0, width: 0.45, height: 0.5 },
+    commandGestures: ["NUMBER_ONE", "NUMBER_TWO", "PINCH"],
+  },
+});
+
+engine.on("command:detected", ({ gesture, handId, mode }) => {
+  // Executar uma ação da aplicação aqui.
+  console.log({ gesture, handId, mode });
+});
+engine.on("recognition:state", ({ hands }) => {
+  // status, progress (0..1), armed e gesture para montar seu próprio HUD.
+  console.log(hands);
+});
+
+engine.setRecognitionMode("BYPASS");
+engine.configureRecognition({ mode: "ALWAYS_ON", region: null });
+engine.setOptions({ stabilizationTimeMs: 300 });
+```
+
+- **Liberação obrigatória:** habilitada por padrão para comandos. Depois de uma
+  ação, todas as poses sobrepostas naquele instante precisam deixar de
+  corresponder por `releaseTimeMs` contínuos (150 ms por padrão). Isso evita
+  repetir a ação ao manter a mão parada ou ao oscilar entre aliases como
+  `NUMBER_TWO` e `VICTORY`. Uma ausência breve da mão não libera a pose.
+  Desabilitar `requireRelease` permite repetir uma pose a cada nova confirmação
+  temporal. A liberação do gesto de ativação continua obrigatória em `ARMED`.
+- **ROI:** utiliza o centro da palma e coordenadas normalizadas da imagem da
+  câmera, com origem no canto superior esquerdo. Com `mirrored: true`, o eixo X
+  acompanha o preview espelhado. O centro deve estar na ROI tanto para ativar
+  quanto para comandar. Sair da região descarta estabilidade e ativação pendentes;
+  a saída da região, sozinha, não libera a pose. O retângulo do playground também
+  considera o recorte do vídeo por `object-fit: cover`.
+- **Estabilidade:** poses estáticas exigem `stabilizationTimeMs` contínuos; ausência,
+  mudança de pose e saída da ROI reiniciam a contagem. Intervalos entre frames
+  maiores que `maxFrameGapMs` (250 ms por padrão) descartam confirmações e
+  ativações pendentes. Timestamps devem ser finitos, não negativos e crescentes.
+- **Swipes:** usam a trajetória temporal do reconhecedor (múltiplas amostras em
+  60–400 ms), em vez de exigir que um movimento instantâneo permaneça como pose.
+  A trajetória precisa começar dentro da região permitida. Cooldown e liberação
+  continuam aplicáveis; para repetir o swipe com liberação habilitada, mude a pose
+  da mão ou retire-a da captura pelo intervalo de liberação.
+- **Prioridade e múltiplas mãos:** `commandGestures` define quais gestos habilitados
+  podem executar ações e a ordem de prioridade quando há sobreposição. O SDK aceita
+  no máximo um comando por mão em cada frame; mãos diferentes podem comandar no
+  mesmo frame. `UNKNOWN` nunca executa comandos. O gesto de ativação pode ser uma
+  pose embutida ou customizada registrada e não precisa constar em `gestures`.
+  O timeout começa na confirmação da ativação e inclui o tempo para liberar a pose.
+- **API pública:** `getRecognitionOptions()`, `getRecognitionState()` e
+  `getActiveGestures()` expõem cópias da configuração e o estado necessário para
+  interfaces. `configureRecognition()` aplica alterações parciais e reinicia a
+  intenção pendente. `setOptions()` atualiza tempos em execução. Pausa, parada,
+  destruição e troca de câmera também descartam ativações pendentes.
+
+### Explorar o Live HUD no playground
+
+Execute `pnpm dev`, abra o endereço mostrado pelo Vite e selecione **Mídia Simulada**
+para testar sem webcam. Inicie a captura e use as poses:
+
+| Pose | Ação na demonstração |
+| --- | --- |
+| Número 1 | Cena anterior |
+| Número 2 | Próxima cena |
+| Pinça | Tocar / pausar a animação |
+| Punho fechado | Alternar blackout |
+| Polegar para cima / baixo | Aumentar / reduzir intensidade |
+
+O HUD exibe modo, progresso de confirmação, estado de ativação, espera por
+liberação e contagem de comandos aceitos. Use **Sem mão · liberar pose** entre
+comandos para testar a liberação. Em `ARMED`, primeiro selecione **Palma Aberta**,
+espere a indicação **ARMADO**, depois mude para uma pose de comando. Ao selecionar
+uma ROI, marque **Posicionar simulação na ROI** para comparar o comportamento
+dentro e fora da região. Em `BYPASS`, desmarcar **Manter captura** interrompe a fonte ativa;
+a captura pode ser iniciada manualmente novamente, mantendo os comandos bloqueados.
+
+A demonstração controla apenas a interface visual, sem áudio ou integração com
+hardware de palco. As proteções reduzem ativações involuntárias; a configuração
+precisa ser ajustada e testada nas condições reais de câmera, luz e apresentação.

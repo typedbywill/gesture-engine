@@ -72,6 +72,7 @@ var CommandController = class {
       armedTimeoutMs: 5e3,
       requireRelease: true,
       releaseTimeMs: 150,
+      maxFrameGapMs: 250,
       region: null
     };
     this.configure(options);
@@ -79,7 +80,7 @@ var CommandController = class {
   configure(options) {
     const next = { ...this.options, ...options };
     const roi = next.region;
-    if (!["ALWAYS_ON", "ARMED", "BYPASS"].includes(next.mode) || !next.activationGesture || next.activationGesture.startsWith("SWIPE_") || next.activationGesture === "UNKNOWN" || ![next.activationTimeMs, next.armedTimeoutMs, next.releaseTimeMs].every((v) => Number.isFinite(v) && v >= 0) || next.armedTimeoutMs === 0 || roi && (![roi.x, roi.y, roi.width, roi.height].every(Number.isFinite) || roi.x < 0 || roi.y < 0 || roi.width <= 0 || roi.height <= 0 || roi.x + roi.width > 1 || roi.y + roi.height > 1)) {
+    if (!["ALWAYS_ON", "ARMED", "BYPASS"].includes(next.mode) || !next.activationGesture || next.activationGesture.startsWith("SWIPE_") || next.activationGesture === "UNKNOWN" || ![next.activationTimeMs, next.armedTimeoutMs, next.releaseTimeMs].every((v) => Number.isFinite(v) && v >= 0) || next.armedTimeoutMs === 0 || !Number.isFinite(next.maxFrameGapMs) || next.maxFrameGapMs <= 0 || roi && (![roi.x, roi.y, roi.width, roi.height].every(Number.isFinite) || roi.x < 0 || roi.y < 0 || roi.width <= 0 || roi.height <= 0 || roi.x + roi.width > 1 || roi.y + roi.height > 1)) {
       throw new GestureEngineError({ code: "INVALID_RECOGNITION_OPTIONS", message: "Configura\xE7\xE3o de reconhecimento inv\xE1lida." });
     }
     this.options = { ...next, region: roi ? { ...roi } : null, commandGestures: next.commandGestures?.slice() };
@@ -96,11 +97,12 @@ var CommandController = class {
   getState() {
     return { ...this.snapshot, hands: this.snapshot.hands.map((h) => ({ ...h })) };
   }
-  process(hands, matches, timestamp, stabilizationTimeMs, mirrored, enabled) {
+  process(hands, matches, timestamp, stabilizationTimeMs, mirrored, enabled, enabledGestures = []) {
     const commands = [];
     const { mode, region, activationGesture, activationTimeMs, armedTimeoutMs, requireRelease, releaseTimeMs } = this.options;
     this.snapshot = { timestamp, mode, enabled, hands: [] };
-    if (!Number.isFinite(timestamp) || timestamp <= this.lastTimestamp || timestamp - this.lastTimestamp > 250) {
+    const invalidTime = !Number.isFinite(timestamp) || timestamp < 0 || timestamp <= this.lastTimestamp;
+    if (invalidTime || timestamp - this.lastTimestamp > this.options.maxFrameGapMs) {
       for (const state of this.states.values()) {
         state.candidate = void 0;
         state.eligibleSince = timestamp;
@@ -108,17 +110,18 @@ var CommandController = class {
         state.releasedSince = void 0;
       }
     }
-    this.lastTimestamp = timestamp;
-    if (!enabled || mode === "BYPASS" || !Number.isFinite(timestamp)) {
+    if (!invalidTime) this.lastTimestamp = timestamp;
+    if (!enabled || mode === "BYPASS") {
       this.states.clear();
       return commands;
     }
+    if (invalidTime) return commands;
     const present = new Set(hands.map((h) => h.handId));
     for (const id of this.states.keys()) {
       if (!present.has(id)) {
         const state = this.states.get(id);
         state.candidate = void 0;
-        state.eligibleSince = timestamp;
+        state.eligibleSince = Infinity;
         state.armedUntil = -Infinity;
         state.releasedSince ??= timestamp;
         if (timestamp - state.releasedSince >= releaseTimeMs) this.states.delete(id);
@@ -137,12 +140,13 @@ var CommandController = class {
       const y = hand.features.palmCenter.y;
       if (region && !(x >= region.x && x <= region.x + region.width && y >= region.y && y <= region.y + region.height)) {
         state.candidate = void 0;
-        state.eligibleSince = timestamp;
+        state.eligibleSince = Infinity;
         state.armedUntil = -Infinity;
         view.armed = false;
         view.status = "OUTSIDE_ROI";
         continue;
       }
+      if (!Number.isFinite(state.eligibleSince)) state.eligibleSince = timestamp;
       if (state.locked.size) {
         view.status = "WAITING_RELEASE";
         const holding = [...state.locked].some((g) => raw.has(g) || g === "__SWIPE__" && [...raw.keys()].some((k) => k.startsWith("SWIPE_")));
@@ -154,7 +158,7 @@ var CommandController = class {
         state.candidate = void 0;
       }
       const waiting = mode === "ARMED" && timestamp >= state.armedUntil;
-      const candidates = waiting ? [activationGesture] : this.options.commandGestures ?? [...raw.keys()];
+      const candidates = waiting ? [activationGesture] : this.options.commandGestures ?? enabledGestures;
       const gesture = candidates.find((g) => raw.has(g) && g !== "UNKNOWN" && (waiting || mode !== "ARMED" || g !== activationGesture));
       if (!gesture) {
         state.candidate = void 0;
@@ -167,7 +171,7 @@ var CommandController = class {
       }
       const match = raw.get(gesture);
       if (gesture.startsWith("SWIPE_") && timestamp - state.eligibleSince < (match.duration ?? 0)) continue;
-      const required = waiting ? activationTimeMs : stabilizationTimeMs;
+      const required = waiting ? activationTimeMs : gesture.startsWith("SWIPE_") ? 0 : stabilizationTimeMs;
       const elapsed = gesture.startsWith("SWIPE_") ? match.duration ?? 0 : timestamp - state.since;
       view.status = waiting ? "ACTIVATING" : "STABILIZING";
       view.gesture = gesture;
@@ -1218,7 +1222,11 @@ var GestureEngine = class {
     return this.commands.getOptions();
   }
   getRecognitionState() {
-    return this.commands.getState();
+    return { ...this.commands.getState(), enabled: this.recognitionEnabled && (this.state === "RUNNING" || this.state === "INITIALIZED") };
+  }
+  /** Discard motion, activation and pending poses after a source interruption. */
+  resetRecognition(reason = "recognition_paused") {
+    this.cancelAllGestures(reason, Date.now());
   }
   getActiveGestures() {
     return this.stabilizer.getActiveGestures();
@@ -1268,6 +1276,7 @@ var GestureEngine = class {
     for (const event of cancelled) {
       this.emitter.emit("gesture:cancelled", event);
     }
+    this.commands.reset();
     this.customGestures.delete(name);
     this.enabledGestures.delete(name);
     return true;
@@ -1355,7 +1364,7 @@ var GestureEngine = class {
                 score: evalResult.score,
                 data: evalResult.data
               });
-              anyStaticMatched = true;
+              if (this.enabledGestures.has(gesture)) anyStaticMatched = true;
             }
           } catch (err) {
             this.emitter.emit(
@@ -1378,14 +1387,14 @@ var GestureEngine = class {
             if (typeof evalResult === "boolean") {
               if (evalResult) {
                 handMatches.set(name, { score: 1 });
-                anyStaticMatched = true;
+                if (this.enabledGestures.has(name)) anyStaticMatched = true;
               }
             } else if (evalResult.matched) {
               handMatches.set(name, {
                 score: evalResult.score ?? 1,
                 data: evalResult.data
               });
-              anyStaticMatched = true;
+              if (this.enabledGestures.has(name)) anyStaticMatched = true;
             }
           }
         } catch (err) {
@@ -1457,7 +1466,8 @@ var GestureEngine = class {
       timestamp,
       this.options.stabilizationTimeMs ?? 150,
       this.options.mirrored ?? false,
-      true
+      true,
+      allCandidateGestures
     );
     this.emitter.emit("recognition:state", this.commands.getState());
     for (const command of commands) this.emitter.emit("command:detected", command);

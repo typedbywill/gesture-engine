@@ -128,152 +128,217 @@
             <p class="form-help">Demo visual, sem áudio ou dispositivos externos. Mantenha a pose pelo tempo de estabilização e libere antes do próximo comando.</p>
           </div>
         </section>
-
-        <!-- Event Log -->
-        <div class="card log-card">
-          <div class="card-header">
-            <h2 class="card-title">Log de Eventos Tipados</h2>
-            <div class="log-actions">
-              <label class="checkbox-label">
-                <input type="checkbox" id="chkAutoScroll" checked>
-                <span>Auto-scroll</span>
-              </label>
-              <button id="btnClearLog" class="btn btn-sm btn-ghost">Limpar</button>
-            </div>
-          </div>
-          <div class="log-container" id="logContainer">
-            <div class="log-placeholder">Nenhum evento registrado ainda. Inicie a captura ou mídia simulada.</div>
-          </div>
-        </div>
       </section>
 
-      <!-- Sidebar Settings & Catalog Column -->
+      <!-- Sidebar Settings, Tabs & History Column -->
       <aside class="sidebar-section">
-        <section class="card safety-card" aria-labelledby="safetyTitle">
-          <div class="card-header"><h2 class="card-title" id="safetyTitle">Reconhecimento · uso ao vivo</h2></div>
-          <div class="card-body">
-            <div class="form-group"><label for="recognitionMode">Modo de comandos</label>
-              <select id="recognitionMode"><option value="ALWAYS_ON">ALWAYS_ON · contínuo</option><option value="ARMED">ARMED · ativar antes de comandar</option><option value="BYPASS">BYPASS · ignorar comandos</option></select>
-            </div>
-            <label class="checkbox-label"><input type="checkbox" id="keepCameraInBypass" checked>Manter captura ao entrar em BYPASS</label>
-            <div class="form-group"><label for="activationGesture">Gesto de ativação</label>
-              <select id="activationGesture"><option value="OPEN_PALM">Palma aberta</option><option value="ROCK_ON">Rock on</option><option value="VICTORY">Vitória</option></select>
-              <small class="form-help">Em ARMED: segure por 500 ms, libere e faça um comando. Uma ativação aceita um comando por mão.</small>
-            </div>
-            <div class="form-group"><label for="armedTimeout">Janela após ativação</label><select id="armedTimeout"><option value="3000">3 segundos</option><option value="5000" selected>5 segundos</option><option value="10000">10 segundos</option></select></div>
-            <label class="checkbox-label"><input type="checkbox" id="requireRelease" checked>Exigir liberação após comando</label>
-            <small class="form-help">Exige 150 ms fora da pose anterior. Desativado: permite repetir a ação a cada intervalo de estabilização.</small>
-            <div class="form-group"><label for="activationRegion">Região de ativação (ROI)</label>
-              <select id="activationRegion"><option value="OFF">Toda a imagem</option><option value="TOP_RIGHT">Canto superior direito</option><option value="TOP_LEFT">Canto superior esquerdo</option><option value="CENTER">Centro da imagem</option></select>
-              <small class="form-help">O centro amarelo da palma deve estar na área marcada, tanto para ativar quanto para comandar.</small>
-            </div>
-            <p class="form-help">O HUD responde a command:detected. Os eventos gesture:* continuam no log para diagnóstico, inclusive em BYPASS.</p>
-          </div>
-        </section>
-        <!-- Settings Panel -->
-        <div class="card">
-          <div class="card-header">
-            <h2 class="card-title">Ajustes & Estabilização</h2>
-          </div>
-          <div class="card-body">
-            <div class="form-group">
-              <div class="label-with-value">
-                <label for="sliderStabilization">Estabilização de Pose:</label>
-                <span id="valStabilization">150 ms</span>
+        <!-- Sidebar Navigation Tabs -->
+        <nav class="sidebar-tabs" role="tablist" aria-label="Navegação da barra lateral">
+          <button class="tab-btn active" data-tab="tabHistory" role="tab" aria-selected="true" id="tabBtnHistory">
+            <span class="tab-icon">📜</span>
+            <span class="tab-label">Histórico</span>
+            <span class="tab-badge" id="historyCounterBadge">0</span>
+          </button>
+          <button class="tab-btn" data-tab="tabRecognition" role="tab" aria-selected="false" id="tabBtnRecognition">
+            <span class="tab-icon">🛡️</span>
+            <span class="tab-label">Modos</span>
+          </button>
+          <button class="tab-btn" data-tab="tabSettings" role="tab" aria-selected="false" id="tabBtnSettings">
+            <span class="tab-icon">⚙️</span>
+            <span class="tab-label">Ajustes</span>
+          </button>
+          <button class="tab-btn" data-tab="tabCustom" role="tab" aria-selected="false" id="tabBtnCustom">
+            <span class="tab-icon">✨</span>
+            <span class="tab-label">Custom</span>
+          </button>
+          <button class="tab-btn" data-tab="tabCatalog" role="tab" aria-selected="false" id="tabBtnCatalog">
+            <span class="tab-icon">📖</span>
+            <span class="tab-label">Catálogo</span>
+          </button>
+        </nav>
+
+        <!-- 1. Painel de Histórico de Eventos & Gestos -->
+        <div class="tab-panel active" id="tabHistory" role="tabpanel" aria-labelledby="tabBtnHistory">
+          <div class="card history-panel-card">
+            <div class="card-header">
+              <h2 class="card-title">Histórico de Eventos & Gestos</h2>
+              <div class="history-quick-actions">
+                <label class="checkbox-label" title="Rolar automaticamente para novos eventos">
+                  <input type="checkbox" id="chkAutoScroll" checked>
+                  <span>Auto-scroll</span>
+                </label>
+                <button id="btnClearLog" class="btn btn-sm btn-ghost" title="Limpar histórico">Limpar</button>
               </div>
-              <input type="range" id="sliderStabilization" min="0" max="600" step="25" value="150">
-              <small class="form-help">Tempo contínuo de correspondência antes de emitir gesture:detected e start.</small>
             </div>
 
-            <div class="form-group">
-              <div class="label-with-value">
-                <label for="sliderAbsence">Tolerância de Ausência:</label>
-                <span id="valAbsence">250 ms</span>
+            <!-- Resumo em Métricas Rápidas -->
+            <div class="history-metrics-bar">
+              <div class="metric-item">
+                <span class="metric-label">Gestos</span>
+                <span class="metric-val" id="metricTotalGestures">0</span>
               </div>
-              <input type="range" id="sliderAbsence" min="100" max="800" step="50" value="250">
-              <small class="form-help">Tempo sem ver a mão antes de declarar hand:lost e cancelar gestos.</small>
+              <div class="metric-item">
+                <span class="metric-label">Última Duração</span>
+                <span class="metric-val metric-highlight" id="metricLastDuration">--</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Comandos</span>
+                <span class="metric-val" id="metricTotalCommands">0</span>
+              </div>
             </div>
 
-            <div class="form-group">
-              <div class="label-with-value">
-                <label for="sliderCooldown">Cooldown de Swipes:</label>
-                <span id="valCooldown">500 ms</span>
-              </div>
-              <input type="range" id="sliderCooldown" min="200" max="1500" step="50" value="500">
+            <!-- Filtros de Categorias -->
+            <div class="history-filter-bar">
+              <button class="filter-chip active" data-filter="all">Todos</button>
+              <button class="filter-chip" data-filter="gesture">Gestos</button>
+              <button class="filter-chip" data-filter="command">Comandos</button>
+              <button class="filter-chip" data-filter="hand">Mãos</button>
+              <button class="filter-chip" data-filter="system">Sistema</button>
+            </div>
+
+            <!-- Feed do Histórico -->
+            <div class="history-container" id="logContainer">
+              <div class="log-placeholder">Nenhum evento registrado ainda. Inicie a captura ou mídia simulada.</div>
             </div>
           </div>
         </div>
 
-        <!-- Custom Gesture Creator -->
-        <div class="card">
-          <div class="card-header">
-            <h2 class="card-title">Gesto Customizado</h2>
-          </div>
-          <div class="card-body">
-            <p class="section-desc">Registre regras personalizadas usando a API do SDK em tempo real:</p>
-            <div class="custom-gesture-box">
-              <div class="form-group">
-                <label for="txtCustomName">Nome do Gesto:</label>
-                <input type="text" id="txtCustomName" value="I_LOVE_YOU" placeholder="NOME_UNICO">
+        <!-- 2. Painel de Modos de Reconhecimento & Segurança -->
+        <div class="tab-panel" id="tabRecognition" role="tabpanel" aria-labelledby="tabBtnRecognition">
+          <section class="card safety-card" aria-labelledby="safetyTitle">
+            <div class="card-header"><h2 class="card-title" id="safetyTitle">Reconhecimento · Modos de Operação</h2></div>
+            <div class="card-body">
+              <div class="form-group"><label for="recognitionMode">Modo de comandos</label>
+                <select id="recognitionMode"><option value="ALWAYS_ON">ALWAYS_ON · contínuo</option><option value="ARMED">ARMED · ativar antes de comandar</option><option value="BYPASS">BYPASS · ignorar comandos</option></select>
               </div>
-              <div class="form-group">
-                <label>Regra pré-configurada:</label>
-                <select id="selCustomPreset">
-                  <option value="ILY">I Love You (Polegar + Indicador + Mínimo)</option>
-                  <option value="SHAKA">Shaka / Hang Loose (Polegar + Mínimo)</option>
-                  <option value="SPOCK">Saudação Vulcana Spock</option>
-                </select>
+              <label class="checkbox-label"><input type="checkbox" id="keepCameraInBypass" checked>Manter captura ao entrar em BYPASS</label>
+              <div class="form-group"><label for="activationGesture">Gesto de ativação</label>
+                <select id="activationGesture"><option value="OPEN_PALM">Palma aberta</option><option value="ROCK_ON">Rock on</option><option value="VICTORY">Vitória</option></select>
+                <small class="form-help">Em ARMED: segure por 500 ms, libere e faça um comando. Uma ativação aceita um comando por mão.</small>
               </div>
-              <button id="btnRegisterCustom" class="btn btn-primary btn-block">Registrar Gesto</button>
+              <div class="form-group"><label for="armedTimeout">Janela após ativação</label><select id="armedTimeout"><option value="3000">3 segundos</option><option value="5000" selected>5 segundos</option><option value="10000">10 segundos</option></select></div>
+              <label class="checkbox-label"><input type="checkbox" id="requireRelease" checked>Exigir liberação após comando</label>
+              <small class="form-help">Exige 150 ms fora da pose anterior. Desativado: permite repetir a ação a cada intervalo de estabilização.</small>
+              <div class="form-group"><label for="activationRegion">Região de ativação (ROI)</label>
+                <select id="activationRegion"><option value="OFF">Toda a imagem</option><option value="TOP_RIGHT">Canto superior direito</option><option value="TOP_LEFT">Canto superior esquerdo</option><option value="CENTER">Centro da imagem</option></select>
+                <small class="form-help">O centro amarelo da palma deve estar na área marcada, tanto para ativar quanto para comandar.</small>
+              </div>
+              <p class="form-help">O HUD responde a command:detected. Os eventos gesture:* continuam no log para diagnóstico, inclusive em BYPASS.</p>
+            </div>
+          </section>
+        </div>
+
+        <!-- 3. Painel de Ajustes & Estabilização -->
+        <div class="tab-panel" id="tabSettings" role="tabpanel" aria-labelledby="tabBtnSettings">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Ajustes & Estabilização</h2>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <div class="label-with-value">
+                  <label for="sliderStabilization">Estabilização de Pose:</label>
+                  <span id="valStabilization">150 ms</span>
+                </div>
+                <input type="range" id="sliderStabilization" min="0" max="600" step="25" value="150">
+                <small class="form-help">Tempo contínuo de correspondência antes de emitir gesture:detected e start.</small>
+              </div>
+
+              <div class="form-group">
+                <div class="label-with-value">
+                  <label for="sliderAbsence">Tolerância de Ausência:</label>
+                  <span id="valAbsence">250 ms</span>
+                </div>
+                <input type="range" id="sliderAbsence" min="100" max="800" step="50" value="250">
+                <small class="form-help">Tempo sem ver a mão antes de declarar hand:lost e cancelar gestos.</small>
+              </div>
+
+              <div class="form-group">
+                <div class="label-with-value">
+                  <label for="sliderCooldown">Cooldown de Swipes:</label>
+                  <span id="valCooldown">500 ms</span>
+                </div>
+                <input type="range" id="sliderCooldown" min="200" max="1500" step="50" value="500">
+                <small class="form-help">Intervalo mínimo entre reconhecimentos consecutivos de swipe.</small>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Pose Reference Catalog -->
-        <div class="card catalog-card">
-          <div class="card-header">
-            <h2 class="card-title">Catálogo de Poses Suportadas</h2>
+        <!-- 4. Painel de Gesto Customizado -->
+        <div class="tab-panel" id="tabCustom" role="tabpanel" aria-labelledby="tabBtnCustom">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Gesto Customizado</h2>
+            </div>
+            <div class="card-body">
+              <p class="section-desc">Registre regras personalizadas usando a API do SDK em tempo real:</p>
+              <div class="custom-gesture-box">
+                <div class="form-group">
+                  <label for="txtCustomName">Nome do Gesto:</label>
+                  <input type="text" id="txtCustomName" value="I_LOVE_YOU" placeholder="NOME_UNICO">
+                </div>
+                <div class="form-group">
+                  <label>Regra pré-configurada:</label>
+                  <select id="selCustomPreset">
+                    <option value="ILY">I Love You (Polegar + Indicador + Mínimo)</option>
+                    <option value="SHAKA">Shaka / Hang Loose (Polegar + Mínimo)</option>
+                    <option value="SPOCK">Saudação Vulcana Spock</option>
+                  </select>
+                </div>
+                <button id="btnRegisterCustom" class="btn btn-primary btn-block">Registrar Gesto</button>
+              </div>
+            </div>
           </div>
-          <div class="card-body catalog-list">
-            <div class="catalog-item">
-              <div class="item-title">🖐️ OPEN_PALM / NUMBER_FIVE</div>
-              <div class="item-desc">Todos os 5 dedos estendidos com a palma aberta.</div>
+        </div>
+
+        <!-- 5. Painel de Catálogo -->
+        <div class="tab-panel" id="tabCatalog" role="tabpanel" aria-labelledby="tabBtnCatalog">
+          <div class="card catalog-card">
+            <div class="card-header">
+              <h2 class="card-title">Catálogo de Poses Suportadas</h2>
             </div>
-            <div class="catalog-item">
-              <div class="item-title">✊ CLOSED_FIST</div>
-              <div class="item-desc">Todos os dedos flexionados contra a palma e polegar recolhido.</div>
-            </div>
-            <div class="catalog-item">
-              <div class="item-title">☝️ NUMBER_ONE / POINTING_UP</div>
-              <div class="item-desc">Apenas o dedo indicador estendido, demais dedos flexionados.</div>
-            </div>
-            <div class="catalog-item">
-              <div class="item-title">✌️ NUMBER_TWO & VICTORY</div>
-              <div class="item-desc">Indicador e médio estendidos. Em forma de V ativa ambos simultaneamente.</div>
-            </div>
-            <div class="catalog-item">
-              <div class="item-title">🤟 NUMBER_THREE / NUMBER_FOUR</div>
-              <div class="item-desc">Combinações explícitas: 3 dedos (indicador, médio, anelar) ou 4 sem polegar.</div>
-            </div>
-            <div class="catalog-item">
-              <div class="item-title">🤘 ROCK_ON</div>
-              <div class="item-desc">Indicador e mínimo estendidos, médio e anelar flexionados.</div>
-            </div>
-            <div class="catalog-item">
-              <div class="item-title">👍 THUMBS_UP / THUMBS_DOWN</div>
-              <div class="item-desc">Polegar estendido apontando para cima ou para baixo, demais flexionados.</div>
-            </div>
-            <div class="catalog-item">
-              <div class="item-title">👌 OK_SIGN</div>
-              <div class="item-desc">Contato entre ponta do indicador e polegar com os outros 3 dedos estendidos.</div>
-            </div>
-            <div class="catalog-item">
-              <div class="item-title">🤏 PINCH</div>
-              <div class="item-desc">Aproximação entre indicador e polegar, independente dos outros dedos.</div>
-            </div>
-            <div class="catalog-item">
-              <div class="item-title">💨 SWIPES (LEFT, RIGHT, UP, DOWN)</div>
-              <div class="item-desc">Deslocamento rápido da palma com direção dominante e cooldown de 500ms.</div>
+            <div class="card-body catalog-list">
+              <div class="catalog-item">
+                <div class="item-title">🖐️ OPEN_PALM / NUMBER_FIVE</div>
+                <div class="item-desc">Todos os 5 dedos estendidos com a palma aberta.</div>
+              </div>
+              <div class="catalog-item">
+                <div class="item-title">✊ CLOSED_FIST</div>
+                <div class="item-desc">Todos os dedos flexionados contra a palma e polegar recolhido.</div>
+              </div>
+              <div class="catalog-item">
+                <div class="item-title">☝️ NUMBER_ONE / POINTING_UP</div>
+                <div class="item-desc">Apenas o dedo indicador estendido, demais dedos flexionados.</div>
+              </div>
+              <div class="catalog-item">
+                <div class="item-title">✌️ NUMBER_TWO & VICTORY</div>
+                <div class="item-desc">Indicador e médio estendidos. Em forma de V ativa ambos simultaneamente.</div>
+              </div>
+              <div class="catalog-item">
+                <div class="item-title">🤟 NUMBER_THREE / NUMBER_FOUR</div>
+                <div class="item-desc">Combinações explícitas: 3 dedos (indicador, médio, anelar) ou 4 sem polegar.</div>
+              </div>
+              <div class="catalog-item">
+                <div class="item-title">🤘 ROCK_ON</div>
+                <div class="item-desc">Indicador e mínimo estendidos, médio e anelar flexionados.</div>
+              </div>
+              <div class="catalog-item">
+                <div class="item-title">👍 THUMBS_UP / THUMBS_DOWN</div>
+                <div class="item-desc">Polegar estendido apontando para cima ou para baixo, demais flexionados.</div>
+              </div>
+              <div class="catalog-item">
+                <div class="item-title">👌 OK_SIGN</div>
+                <div class="item-desc">Contato entre ponta do indicador e polegar com os outros 3 dedos estendidos.</div>
+              </div>
+              <div class="catalog-item">
+                <div class="item-title">🤏 PINCH</div>
+                <div class="item-desc">Aproximação entre indicador e polegar, independente dos outros dedos.</div>
+              </div>
+              <div class="catalog-item">
+                <div class="item-title">💨 SWIPES (LEFT, RIGHT, UP, DOWN)</div>
+                <div class="item-desc">Deslocamento rápido da palma com direção dominante e cooldown de 500ms.</div>
+              </div>
             </div>
           </div>
         </div>

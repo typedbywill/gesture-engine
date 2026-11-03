@@ -30,7 +30,11 @@ export function setupLiveHUD(engine: BrowserGestureEngine, onBypass: () => Promi
     stage.style.setProperty("--intensity", String(volume / 100));
     Array.from(element("sceneTabs").children).forEach((tab, i) => tab.classList.toggle("selected", scene === i));
   }
+  let lastStateKey = "";
   function renderState(state: RecognitionStateEvent) {
+    const key = JSON.stringify([state.mode, state.enabled, state.hands.map(hand => ({ ...hand, progress: Math.round(hand.progress * 100) }))]);
+    if (key === lastStateKey) return;
+    lastStateKey = key;
     badge.textContent = `${state.mode}${!state.enabled ? " · PAUSADO" : ""}`;
     badge.dataset.mode = state.mode;
     help.textContent = !state.enabled ? "Reconhecimento pausado. Retome para aceitar comandos." : state.mode === "BYPASS"

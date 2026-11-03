@@ -76,8 +76,9 @@ export class SimulatedCamera {
       const hands = this.generateFrame(now);
       if (this.position) {
         for (const hand of hands) for (const p of hand.landmarks) {
-          p.x += this.position.x - 0.5;
-          p.y += this.position.y - 0.55;
+          // Fit the full synthetic hand inside corner regions as well.
+          p.x = this.position.x + (p.x - 0.5) * 0.65;
+          p.y = this.position.y + (p.y - 0.55) * 0.65;
         }
       }
       if (this.onFrameCallback) {

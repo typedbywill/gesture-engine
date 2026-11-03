@@ -194,7 +194,14 @@ export class GestureEngine {
   }
 
   getRecognitionOptions(): RecognitionOptions { return this.commands.getOptions(); }
-  getRecognitionState() { return this.commands.getState(); }
+  getRecognitionState() {
+    return { ...this.commands.getState(), enabled: this.recognitionEnabled && (this.state === "RUNNING" || this.state === "INITIALIZED") };
+  }
+
+  /** Discard motion, activation and pending poses after a source interruption. */
+  resetRecognition(reason: GestureCancellationReason = "recognition_paused"): void {
+    this.cancelAllGestures(reason, Date.now());
+  }
   getActiveGestures() { return this.stabilizer.getActiveGestures(); }
 
   setOptions(options: Pick<GestureEngineOptions, "stabilizationTimeMs" | "absenceTimeoutMs" | "endGracePeriodMs" | "swipeCooldownMs">): void {
@@ -253,6 +260,7 @@ export class GestureEngine {
       this.emitter.emit("gesture:cancelled", event);
     }
 
+    this.commands.reset();
     this.customGestures.delete(name);
     this.enabledGestures.delete(name);
     return true;
@@ -373,7 +381,7 @@ export class GestureEngine {
                 score: evalResult.score,
                 data: evalResult.data,
               });
-              anyStaticMatched = true;
+              if (this.enabledGestures.has(gesture)) anyStaticMatched = true;
             }
           } catch (err) {
             this.emitter.emit(
@@ -399,14 +407,14 @@ export class GestureEngine {
             if (typeof evalResult === "boolean") {
               if (evalResult) {
                 handMatches.set(name, { score: 1.0 });
-                anyStaticMatched = true;
+                if (this.enabledGestures.has(name)) anyStaticMatched = true;
               }
             } else if (evalResult.matched) {
               handMatches.set(name, {
                 score: evalResult.score ?? 1.0,
                 data: evalResult.data,
               });
-              anyStaticMatched = true;
+              if (this.enabledGestures.has(name)) anyStaticMatched = true;
             }
           }
         } catch (err) {
@@ -480,7 +488,7 @@ export class GestureEngine {
       });
     }
 
-    // Exclude non-enabled commands unless explicitly supplied in commandGestures.
+    // Keep selected command poses and the activation pose for the safety controller.
     const allowedCommands = this.commands.getOptions().commandGestures;
     for (const raw of commandMatches.values()) {
       for (const gesture of raw.keys()) {
@@ -488,7 +496,7 @@ export class GestureEngine {
       }
     }
     const commands = this.commands.process(trackingResult.updatedHands, commandMatches, timestamp,
-      this.options.stabilizationTimeMs ?? 150, this.options.mirrored ?? false, true);
+      this.options.stabilizationTimeMs ?? 150, this.options.mirrored ?? false, true, allCandidateGestures);
     this.emitter.emit("recognition:state", this.commands.getState());
     for (const command of commands) this.emitter.emit("command:detected", command);
 

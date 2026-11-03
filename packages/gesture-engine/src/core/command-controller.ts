@@ -24,7 +24,7 @@ export class CommandController {
   constructor(options: RecognitionOptions = {}) {
     this.options = {
       mode: "ALWAYS_ON", activationGesture: "OPEN_PALM", activationTimeMs: 500,
-      armedTimeoutMs: 5000, requireRelease: true, releaseTimeMs: 150, region: null,
+      armedTimeoutMs: 5000, requireRelease: true, releaseTimeMs: 150, maxFrameGapMs: 250, region: null,
     };
     this.configure(options);
   }
@@ -35,7 +35,7 @@ export class CommandController {
     if (!["ALWAYS_ON", "ARMED", "BYPASS"].includes(next.mode) ||
         !next.activationGesture || next.activationGesture.startsWith("SWIPE_") || next.activationGesture === "UNKNOWN" ||
         ![next.activationTimeMs, next.armedTimeoutMs, next.releaseTimeMs].every(v => Number.isFinite(v) && v >= 0) ||
-        next.armedTimeoutMs === 0 ||
+        next.armedTimeoutMs === 0 || !Number.isFinite(next.maxFrameGapMs) || next.maxFrameGapMs <= 0 ||
         (roi && (![roi.x, roi.y, roi.width, roi.height].every(Number.isFinite) ||
           roi.x < 0 || roi.y < 0 || roi.width <= 0 || roi.height <= 0 || roi.x + roi.width > 1 || roi.y + roi.height > 1))) {
       throw new GestureEngineError({ code: "INVALID_RECOGNITION_OPTIONS", message: "Configuração de reconhecimento inválida." });
@@ -61,12 +61,14 @@ export class CommandController {
   process(
     hands: TrackedHand[], matches: Map<string, Map<GestureName, Match>>,
     timestamp: number, stabilizationTimeMs: number, mirrored: boolean, enabled: boolean,
+    enabledGestures: GestureName[] = [],
   ): CommandDetectedEvent[] {
     const commands: CommandDetectedEvent[] = [];
     const { mode, region, activationGesture, activationTimeMs, armedTimeoutMs, requireRelease, releaseTimeMs } = this.options;
     this.snapshot = { timestamp, mode, enabled, hands: [] };
+    const invalidTime = !Number.isFinite(timestamp) || timestamp < 0 || timestamp <= this.lastTimestamp;
     // Broken frame continuity must never count towards confirmation.
-    if (!Number.isFinite(timestamp) || timestamp <= this.lastTimestamp || timestamp - this.lastTimestamp > 250) {
+    if (invalidTime || timestamp - this.lastTimestamp > this.options.maxFrameGapMs) {
       for (const state of this.states.values()) {
         state.candidate = undefined;
         state.eligibleSince = timestamp;
@@ -74,17 +76,18 @@ export class CommandController {
         state.releasedSince = undefined;
       }
     }
-    this.lastTimestamp = timestamp;
-    if (!enabled || mode === "BYPASS" || !Number.isFinite(timestamp)) {
+    if (!invalidTime) this.lastTimestamp = timestamp;
+    if (!enabled || mode === "BYPASS") {
       this.states.clear();
       return commands;
     }
+    if (invalidTime) return commands;
     const present = new Set(hands.map(h => h.handId));
     for (const id of this.states.keys()) {
       if (!present.has(id)) {
         const state = this.states.get(id)!;
         state.candidate = undefined;
-        state.eligibleSince = timestamp;
+        state.eligibleSince = Infinity;
         state.armedUntil = -Infinity;
         state.releasedSince ??= timestamp;
         if (timestamp - state.releasedSince >= releaseTimeMs) this.states.delete(id);
@@ -103,12 +106,13 @@ export class CommandController {
       const y = hand.features.palmCenter.y;
       if (region && !(x >= region.x && x <= region.x + region.width && y >= region.y && y <= region.y + region.height)) {
         state.candidate = undefined;
-        state.eligibleSince = timestamp;
+        state.eligibleSince = Infinity;
         state.armedUntil = -Infinity;
         view.armed = false;
         view.status = "OUTSIDE_ROI";
         continue;
       }
+      if (!Number.isFinite(state.eligibleSince)) state.eligibleSince = timestamp;
       if (state.locked.size) {
         view.status = "WAITING_RELEASE";
         // A swipe must settle (no swipe candidates) before another command.
@@ -121,7 +125,7 @@ export class CommandController {
         state.candidate = undefined;
       }
       const waiting = mode === "ARMED" && timestamp >= state.armedUntil;
-      const candidates = waiting ? [activationGesture] : (this.options.commandGestures ?? [...raw.keys()]);
+      const candidates = waiting ? [activationGesture] : (this.options.commandGestures ?? enabledGestures);
       const gesture = candidates.find(g => raw.has(g) && g !== "UNKNOWN" && (waiting || mode !== "ARMED" || g !== activationGesture));
       if (!gesture) {
         state.candidate = undefined;
@@ -131,7 +135,8 @@ export class CommandController {
       if (state.candidate !== gesture) { state.candidate = gesture; state.since = timestamp; }
       const match = raw.get(gesture)!;
       if (gesture.startsWith("SWIPE_") && timestamp - state.eligibleSince < (match.duration ?? 0)) continue;
-      const required = waiting ? activationTimeMs : stabilizationTimeMs;
+      // Swipes already confirm a multi-frame trajectory in SwipeTracker.
+      const required = waiting ? activationTimeMs : gesture.startsWith("SWIPE_") ? 0 : stabilizationTimeMs;
       const elapsed = gesture.startsWith("SWIPE_") ? (match.duration ?? 0) : timestamp - state.since;
       view.status = waiting ? "ACTIVATING" : "STABILIZING";
       view.gesture = gesture;
