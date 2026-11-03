@@ -25,7 +25,6 @@ export type SimulationMode =
   | "NUMBER_THREE"
   | "NUMBER_FOUR"
   | "NUMBER_FIVE"
-  | "VICTORY"
   | "ROCK_ON"
   | "THUMBS_UP"
   | "THUMBS_DOWN"
@@ -55,7 +54,6 @@ export class SimulatedCamera {
     { name: "NUMBER_THREE", createFn: () => createNumberThree(1.0, "Right") },
     { name: "NUMBER_FOUR", createFn: () => createNumberFour(1.0, "Right") },
     { name: "NUMBER_FIVE", createFn: () => createNumberFive(1.0, "Right") },
-    { name: "VICTORY", createFn: () => createVictory(1.0, "Right") },
     { name: "ROCK_ON", createFn: () => createRockOn(1.0, "Right") },
     { name: "THUMBS_UP", createFn: () => createThumbsUp(1.0, "Right") },
     { name: "THUMBS_DOWN", createFn: () => createThumbsDown(1.0, "Right") },
@@ -146,7 +144,6 @@ export class SimulatedCamera {
       NUMBER_THREE: () => createNumberThree(1.0, "Right"),
       NUMBER_FOUR: () => createNumberFour(1.0, "Right"),
       NUMBER_FIVE: () => createNumberFive(1.0, "Right"),
-      VICTORY: () => createVictory(1.0, "Right"),
       ROCK_ON: () => createRockOn(1.0, "Right"),
       THUMBS_UP: () => createThumbsUp(1.0, "Right"),
       THUMBS_DOWN: () => createThumbsDown(1.0, "Right"),

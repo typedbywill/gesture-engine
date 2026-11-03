@@ -105,9 +105,9 @@ describe("Protected commands", () => {
 
   it("chooses one command according to priority for overlapping aliases", async () => {
     const { commands, frame } = await setup({ stabilizationTimeMs: 0,
-      recognition: { commandGestures: ["VICTORY", "NUMBER_TWO"] } });
-    frame(0, [createVictory()]); frame(100, [createVictory()]);
-    expect(commands.map(c => c.gesture)).toEqual(["VICTORY"]);
+      recognition: { commandGestures: ["OPEN_PALM", "NUMBER_FIVE"] } });
+    frame(0, [createOpenPalm()]); frame(100, [createOpenPalm()]);
+    expect(commands.map(c => c.gesture)).toEqual(["OPEN_PALM"]);
   });
 
   it("pause, stop, mode changes and long frame gaps discard pending confirmations", async () => {

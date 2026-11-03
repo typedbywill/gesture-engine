@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { GestureEngine } from "../src/core/engine.js";
 import { BUILT_IN_GESTURES } from "../src/core/types.js";
-import { createClosedFist, createNumberTwo, createOpenPalm, createVictory } from "./fixtures.js";
+import { createClosedFist, createNumberFive, createNumberTwo, createOpenPalm } from "./fixtures.js";
 
 describe("Simultaneous Gestures and Temporal Lifecycle", () => {
-  it("permite poses simultâneas como NUMBER_TWO e VICTORY ativas juntas", async () => {
+  it("permite poses simultâneas como OPEN_PALM e NUMBER_FIVE ativas juntas", async () => {
     const engine = new GestureEngine({
       stabilizationTimeMs: 0,
-      gestures: [BUILT_IN_GESTURES.NUMBER_TWO, BUILT_IN_GESTURES.VICTORY],
+      gestures: [BUILT_IN_GESTURES.OPEN_PALM, BUILT_IN_GESTURES.NUMBER_FIVE],
     });
     await engine.init();
     await engine.start();
@@ -17,19 +17,19 @@ describe("Simultaneous Gestures and Temporal Lifecycle", () => {
       activeDetected.push(gesture);
     });
 
-    // Mão com indicador e médio em V (satisfaz tanto NUMBER_TWO quanto VICTORY)
-    const hand = createVictory(1.0, "Right");
+    // Mão com todos os 5 dedos abertos (satisfaz tanto OPEN_PALM quanto NUMBER_FIVE)
+    const hand = createOpenPalm(1.0, "Right");
     const result = engine.processFrame({
       timestamp: 100,
       hands: [hand],
     });
 
-    expect(activeDetected).toContain(BUILT_IN_GESTURES.NUMBER_TWO);
-    expect(activeDetected).toContain(BUILT_IN_GESTURES.VICTORY);
+    expect(activeDetected).toContain(BUILT_IN_GESTURES.OPEN_PALM);
+    expect(activeDetected).toContain(BUILT_IN_GESTURES.NUMBER_FIVE);
 
     const activeNames = result.activeGestures.map((g) => g.gesture);
-    expect(activeNames).toContain(BUILT_IN_GESTURES.NUMBER_TWO);
-    expect(activeNames).toContain(BUILT_IN_GESTURES.VICTORY);
+    expect(activeNames).toContain(BUILT_IN_GESTURES.OPEN_PALM);
+    expect(activeNames).toContain(BUILT_IN_GESTURES.NUMBER_FIVE);
   });
 
   it("respeita a janela de estabilização de 150ms antes de confirmar", async () => {

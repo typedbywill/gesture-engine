@@ -55,7 +55,6 @@ const GESTURE_ICONS: Record<string, string> = {
   NUMBER_ONE: "☝️",
   POINTING_UP: "☝️",
   NUMBER_TWO: "✌️",
-  VICTORY: "✌️",
   NUMBER_THREE: "🤟",
   NUMBER_FOUR: "🖖",
   ROCK_ON: "🤘",

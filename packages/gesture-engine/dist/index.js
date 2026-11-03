@@ -30,7 +30,6 @@ var BUILT_IN_GESTURES = {
   POINTING_RIGHT: "POINTING_RIGHT",
   THUMB_LEFT: "THUMB_LEFT",
   THUMB_RIGHT: "THUMB_RIGHT",
-  VICTORY: "VICTORY",
   ROCK_ON: "ROCK_ON",
   OK_SIGN: "OK_SIGN",
   PINCH: "PINCH",
@@ -307,18 +306,6 @@ var STATIC_RECOGNIZERS = {
     if (!matched) return { matched: false, score: 0 };
     const score = (f.thumb.extensionRatio + f.index.extensionRatio + f.middle.extensionRatio + f.ring.extensionRatio + f.pinky.extensionRatio) / 5;
     return { matched: true, score };
-  },
-  // VICTORY: indicador e médio estendidos em V, anelar e mínimo flexionados
-  [BUILT_IN_GESTURES.VICTORY]: (ctx) => {
-    const f = ctx.features.fingers;
-    const matched = f.index.extended && f.middle.extended && !f.ring.extended && !f.pinky.extended && ctx.features.victorySeparation >= 0.2;
-    if (!matched) return { matched: false, score: 0 };
-    const score = (f.index.extensionRatio + f.middle.extensionRatio) / 2;
-    return {
-      matched: true,
-      score,
-      data: { victorySeparation: ctx.features.victorySeparation }
-    };
   },
   // ROCK_ON: indicador e mínimo estendidos, médio e anelar flexionados
   [BUILT_IN_GESTURES.ROCK_ON]: (ctx) => {

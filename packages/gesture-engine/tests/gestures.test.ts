@@ -75,8 +75,8 @@ describe("Built-in Static Gestures Recognition", () => {
     await testGesture(createNumberFive, BUILT_IN_GESTURES.NUMBER_FIVE);
   });
 
-  it("reconhece VICTORY com separação em V", async () => {
-    await testGesture(createVictory, BUILT_IN_GESTURES.VICTORY);
+  it("reconhece o sinal de V/vitória como NUMBER_TWO", async () => {
+    await testGesture(createVictory, BUILT_IN_GESTURES.NUMBER_TWO);
   });
 
   it("reconhece ROCK_ON", async () => {

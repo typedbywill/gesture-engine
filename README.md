@@ -148,11 +148,10 @@ O SDK inclui 24 gestos embutidos:
 | `OPEN_PALM` | Palma aberta | Todos os 5 dedos estendidos |
 | `CLOSED_FIST` | Punho fechado | Todos os dedos flexionados contra a palma |
 | `NUMBER_ONE` | Número 1 | Apenas o indicador estendido |
-| `NUMBER_TWO` | Número 2 | Indicador e médio estendidos |
+| `NUMBER_TWO` | Número 2 | Indicador e médio estendidos (inclusive formato em V / vitória) |
 | `NUMBER_THREE` | Número 3 | Indicador, médio e anelar estendidos |
 | `NUMBER_FOUR` | Número 4 | 4 dedos estendidos (sem polegar) |
 | `NUMBER_FIVE` | Número 5 | 5 dedos estendidos |
-| `VICTORY` | Sinal de Vitória / Paz | Indicador e médio em formato "V" (separaçāo angular) |
 | `ROCK_ON` | Sinal do Rock | Indicador e mínimo estendidos, médio e anelar recolhidos |
 | `THUMBS_UP` | Polegar para cima | Polegar estendido apontando para cima, demais dedos recolhidos |
 | `THUMBS_DOWN` | Polegar para baixo | Polegar estendido apontando para baixo, demais dedos recolhidos |
@@ -170,7 +169,7 @@ O SDK inclui 24 gestos embutidos:
 | `SWIPE_DOWN` | Deslize para baixo | Deslocamento dinâmico vertical da palma |
 | `UNKNOWN` | Desconhecido | Mão rastreada sem pose estática reconhecida |
 
-> **Poses Simultâneas**: `NUMBER_TWO` e `VICTORY` podem ficar ativos juntos quando as condições geométricas de ambos são satisfeitas.
+> **Poses Simultâneas**: `OPEN_PALM` e `NUMBER_FIVE` podem ficar ativos juntos quando as condições geométricas de ambos são satisfeitas.
 
 ---
 
@@ -344,7 +343,7 @@ engine.setOptions({ stabilizationTimeMs: 300 });
   ação, todas as poses sobrepostas naquele instante precisam deixar de
   corresponder por `releaseTimeMs` contínuos (150 ms por padrão). Isso evita
   repetir a ação ao manter a mão parada ou ao oscilar entre aliases como
-  `NUMBER_TWO` e `VICTORY`. Uma ausência breve da mão não libera a pose.
+  `OPEN_PALM` e `NUMBER_FIVE`. Uma ausência breve da mão não libera a pose.
   Desabilitar `requireRelease` permite repetir uma pose a cada nova confirmação
   temporal. A liberação do gesto de ativação continua obrigatória em `ARMED`.
 - **ROI:** utiliza o centro da palma e coordenadas normalizadas da imagem da
