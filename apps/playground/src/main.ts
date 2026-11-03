@@ -159,11 +159,19 @@ function scheduleRender() {
     renderFrameId = null;
     const handsText = `Mãos: ${activeHandsMap.size}`;
     if (handsBadge.textContent !== handsText) handsBadge.textContent = handsText;
-    drawer.resize(videoContainer.clientWidth, videoContainer.clientHeight);
-    drawer.drawHands(Array.from(activeHandsMap.values()), isMirrored);
+    const { width, height } = videoContainer.getBoundingClientRect();
+    drawer.resize(width, height);
+    drawer.drawHands(
+      Array.from(activeHandsMap.values()),
+      isMirrored,
+      isSimulationMode ? undefined : { width: videoEl.videoWidth, height: videoEl.videoHeight },
+    );
     updateActiveGesturesHUD();
   });
 }
+
+new ResizeObserver(scheduleRender).observe(videoContainer);
+videoEl.addEventListener("resize", scheduleRender);
 
 // Inscrição em Eventos Tipados
 engine.on("ready", () => {
@@ -366,6 +374,7 @@ chkMirror.addEventListener("change", () => {
   } else {
     videoContainer.classList.remove("mirrored");
   }
+  scheduleRender();
 });
 
 // Mode switch: Real Camera vs Simulated Media

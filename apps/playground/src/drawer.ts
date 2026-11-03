@@ -21,29 +21,60 @@ const FINGERTIP_INDICES = new Set([4, 8, 12, 16, 20]);
 export class LandmarkDrawer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
+  private width: number;
+  private height: number;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Não foi possível obter contexto 2D do Canvas");
     this.ctx = ctx;
+    this.width = canvas.width;
+    this.height = canvas.height;
   }
 
-  resize(width: number, height: number): void {
-    if (this.canvas.width !== width || this.canvas.height !== height) {
-      this.canvas.width = width;
-      this.canvas.height = height;
+  resize(width: number, height: number, pixelRatio = globalThis.devicePixelRatio || 1): void {
+    this.width = Math.max(0, width);
+    this.height = Math.max(0, height);
+    const bufferWidth = Math.round(this.width * pixelRatio);
+    const bufferHeight = Math.round(this.height * pixelRatio);
+    if (this.canvas.width !== bufferWidth || this.canvas.height !== bufferHeight) {
+      this.canvas.width = bufferWidth;
+      this.canvas.height = bufferHeight;
     }
+    // Coordenadas e espessuras continuam em pixels CSS em telas de alta densidade.
+    this.ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
   }
 
   clear(): void {
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.clearRect(0, 0, this.width, this.height);
   }
 
-  drawHands(hands: HandTrackingEvent[], mirrored: boolean): void {
+  drawHands(
+    hands: HandTrackingEvent[],
+    mirrored: boolean,
+    source?: { width: number; height: number },
+  ): void {
     this.clear();
-    const w = this.canvas.width;
-    const h = this.canvas.height;
+    const w = this.width;
+    const h = this.height;
+    if (!w || !h) return;
+
+    // Repete o recorte central de object-fit: cover aplicado ao vídeo.
+    // Multiplicar diretamente por w/h distorce mãos quando câmera e viewport
+    // têm proporções diferentes (por exemplo, câmera 4:3 em viewport 16:9).
+    const sourceWidth = source && source.width > 0 && source.height > 0 ? source.width : w;
+    const sourceHeight = source && source.width > 0 && source.height > 0 ? source.height : h;
+    const scale = Math.max(w / sourceWidth, h / sourceHeight);
+    const displayWidth = sourceWidth * scale;
+    const displayHeight = sourceHeight * scale;
+    const offsetX = (w - displayWidth) / 2;
+    const offsetY = (h - displayHeight) / 2;
+    const project = (p: Pick<Landmark3D, "x" | "y">) => {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+      const x = p.x * displayWidth + offsetX;
+      return { x: mirrored ? w - x : x, y: p.y * displayHeight + offsetY };
+    };
 
     for (const hand of hands) {
       const isRight = hand.handedness === "Right";
@@ -52,11 +83,7 @@ export class LandmarkDrawer {
       const tipColor = isRight ? "#22d3ee" : "#f472b6";
 
       // Converte coordenadas normalizadas [0, 1] para pixels
-      const points = hand.landmarks.map((p) => {
-        const x = mirrored ? (1 - p.x) * w : p.x * w;
-        const y = p.y * h;
-        return { x, y };
-      });
+      const points = hand.landmarks.map(project);
 
       // 1. Desenha as conexões (ossos)
       this.ctx.lineWidth = 3;
@@ -77,6 +104,7 @@ export class LandmarkDrawer {
       // 2. Desenha os nós das articulações
       for (let i = 0; i < points.length; i++) {
         const p = points[i];
+        if (!p) continue;
         const isTip = FINGERTIP_INDICES.has(i);
 
         this.ctx.beginPath();
@@ -89,16 +117,17 @@ export class LandmarkDrawer {
       }
 
       // 3. Desenha centro da palma
-      const palmX = mirrored ? (1 - hand.features.palmCenter.x) * w : hand.features.palmCenter.x * w;
-      const palmY = hand.features.palmCenter.y * h;
+      const palm = project(hand.features.palmCenter);
 
-      this.ctx.beginPath();
-      this.ctx.arc(palmX, palmY, 7, 0, Math.PI * 2);
-      this.ctx.fillStyle = "#eab308";
-      this.ctx.fill();
-      this.ctx.lineWidth = 2;
-      this.ctx.strokeStyle = "#ffffff";
-      this.ctx.stroke();
+      if (palm) {
+        this.ctx.beginPath();
+        this.ctx.arc(palm.x, palm.y, 7, 0, Math.PI * 2);
+        this.ctx.fillStyle = "#eab308";
+        this.ctx.fill();
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeStyle = "#ffffff";
+        this.ctx.stroke();
+      }
 
       // 4. Badge com Hand ID e Handedness
       const wristPoint = points[0];
